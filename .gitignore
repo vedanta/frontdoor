@@ -5,6 +5,10 @@
 .vscode/
 .idea/
 
+# Claude Code
+.claude/
+CLAUDE.local.md
+
 # Node / Next.js (for the upcoming rewrite)
 node_modules/
 .next/
@@ -13,3 +17,6 @@ out/
 .env*.local
 npm-debug.log*
 yarn-error.log*
+
+# Claude guidance (kept local)
+CLAUDE.md
