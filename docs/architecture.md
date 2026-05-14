@@ -42,8 +42,10 @@ There are four tiers of services:
    email through **Resend**.
 4. **Clients** — the ISR web app today; React Native iOS/Android apps post-MVP.
 
-There is **no relational database** in v1. Vercel KV (Redis) holds everything: user
-config, the API-key index, and the daily content cache.
+There is **no relational database** in v1 — Vercel KV (Redis) holds everything: user
+accounts, the API-key index, dashboard config, and the daily content cache. The
+account/config domain is expected to migrate to **Neon (Postgres) + Drizzle** post-v1,
+once a real query need appears (see §8); KV then narrows to just the regenerable cache.
 
 ---
 
@@ -468,6 +470,12 @@ spec is *when* it renders — per-user **ISR** instead of a one-shot build.
 - **Delivery model.** Hybrid: web is **per-user ISR** (server-rendered, statically
   cached, keeps the spec's static-document feel); a **JSON API** on the same data layer
   serves React Native post-MVP. Web auth = `httpOnly` cookie, RN auth = `Bearer` key.
+- **Data store for v1.** KV-only — accounts, API-key index, config, and the content
+  cache all live in Vercel KV. Accepted trade-offs: the system-of-record shares a store
+  with the regenerable cache, and every lookup is a hand-rolled index key. **Planned
+  migration:** move the account + config domain to **Neon (Postgres) + Drizzle** once a
+  concrete query need appears (admin/support views, user search, analytics); KV then
+  keeps only the regenerable content cache. Deferred deliberately, not indefinitely.
 
 **Still open:**
 
