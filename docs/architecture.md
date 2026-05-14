@@ -20,7 +20,9 @@ There are three tiers of services:
 
 1. **Platform** — the Vercel ecosystem (hosting, edge middleware, KV store, cron).
 2. **External data sources** — keyless content APIs and RSS feeds, fetched server-side.
-3. **Auth** — a hand-rolled per-user API-key scheme; no third-party identity provider.
+3. **Auth & signup** — a hand-rolled per-user API-key scheme (no third-party identity
+   provider); self-service signup via a `curl`-able endpoint, with the key delivered by
+   email through **Resend**.
 
 There is **no relational database** in v1. Vercel KV (Redis) holds everything: user
 config, the API-key index, and the daily content cache.
@@ -39,6 +41,7 @@ graph TB
         MW[middleware.ts<br/>API-key auth]
         PAGE[app/page.tsx<br/>RSC tree — 7 widget types]
         CLIENT[Client bundle<br/>Clock + SearchBar only]
+        KEYS[/api/keys<br/>self-service signup/]
         REFRESH[/api/refresh<br/>cron-protected/]
         CRON[Vercel Cron<br/>0 3 * * *]
         KV[(Vercel KV / Redis<br/>config + key index + daily cache)]
@@ -56,6 +59,15 @@ graph TB
         ICON[icon.horse favicons]
         METEO[Open-Meteo weather]
     end
+
+    subgraph Email
+        RESEND[Resend<br/>needs RESEND_API_KEY]
+    end
+
+    U -->|POST /api/keys + email| KEYS
+    KEYS -->|mint key, seed config| KV
+    KEYS -->|send key email| RESEND
+    RESEND -.->|key link| U
 
     U -->|GET /?key=abc| MW
     MW -->|validate key| KV
@@ -82,6 +94,36 @@ graph TB
 ---
 
 ## 3. Request flow
+
+### 3.1 Signup — `POST /api/keys`
+
+Self-service: a user `curl`s the endpoint with an email; the key is minted, the default
+config is seeded, and the key is delivered by email via Resend. The HTTP response
+**never contains the key** (so it can't be harvested by hammering the endpoint), and the
+call is **idempotent** — re-signing-up with the same email re-sends the existing key.
+
+```mermaid
+sequenceDiagram
+    participant U as User (curl)
+    participant API as POST /api/keys
+    participant KV as Vercel KV
+    participant R as Resend
+
+    U->>API: { "email": "you@example.com" }
+    API->>API: validate email + rate-limit (IP + email)
+    API->>KV: GET email:{email}
+    alt already registered
+        KV-->>API: userId exists
+        API->>R: re-send existing key
+    else new user
+        API->>KV: SET key:{apiKey}, config:{userId},<br/>email:{email}, user:{userId}
+        API->>R: send key email
+    end
+    API-->>U: 202 { "status": "check your email" }
+    Note over U,R: email arrives → user opens /?key=... → cookie handoff (§3.2)
+```
+
+### 3.2 Page load
 
 ```mermaid
 sequenceDiagram
@@ -148,15 +190,31 @@ keyless **except NASA APOD**.
 > `stoic` and `word` selection are **offline/deterministic** (day-of-year index into a
 > built-in list); only `word` then makes a network call for the definition.
 
-### Auth
+### Email
 
-No third-party identity provider. Two secrets:
+| Service | Role |
+|---------|------|
+| **Resend** | Delivers the API-key email at signup. Official Next.js-friendly SDK; templates may be authored with `react-email`. Adds the `RESEND_API_KEY` secret. |
 
-- **Per-user API key** — bootstraps a session. `?key=` in the URL → validated against
-  KV → `httpOnly` cookie set → redirect to a clean URL. The cookie is the real session;
-  the query param is bootstrap-only (it leaks via logs, history, `Referer`).
+> Production sending requires a **verified domain** (SPF/DKIM DNS records) — e.g.
+> `noreply@frontdoor.app`. This makes "frontdoor needs a real domain" a hard dependency,
+> which the hosted app needs regardless.
+
+### Auth & signup
+
+No third-party identity provider. Secrets involved:
+
+- **Per-user API key** — bootstraps a session. Minted by `POST /api/keys` at signup
+  (see §3.1), delivered by email. On use: `?key=` in the URL → validated against KV →
+  `httpOnly` cookie set → redirect to a clean URL. The cookie is the real session; the
+  query param is bootstrap-only (it leaks via logs, history, `Referer`).
+- **`RESEND_API_KEY`** — authenticates outbound mail to Resend.
 - **`CRON_SECRET`** — bearer token Vercel attaches to cron requests; `/api/refresh`
   rejects anything without it so it can't be triggered publicly.
+
+`POST /api/keys` is a public, unauthenticated endpoint, so it is **rate-limited on both
+IP and email** (it triggers outbound email — a spam vector). Upstash Ratelimit fits
+cleanly since KV is already Upstash Redis.
 
 ---
 
@@ -195,6 +253,8 @@ graph LR
 | Key | Value |
 |-----|-------|
 | `key:{apiKey}` | `userId` |
+| `email:{email}` | `userId` — signup idempotency + key recovery |
+| `user:{userId}` | `{ email, createdAt }` — account record / audit |
 | `config:{userId}` | dashboard config JSON (see [`design/05-config-schema.md`](../design/05-config-schema.md)) |
 | `{source}:{YYYY-MM-DD}` | cached payload for a global source (e.g. `nasa-apod:2026-05-14`) |
 
@@ -215,18 +275,22 @@ graph LR
 
 ## 7. Open decisions
 
-These are flagged in the spec but not yet settled:
+**Settled:**
+
+- **API-key provisioning.** Self-service via `POST /api/keys` with an email; key minted,
+  default config seeded, delivered by email through Resend (see §3.1). Replaces the
+  spec's vague "provisioned manually."
+
+**Still open:**
 
 1. **Geolocation.** Never IP-geolocate from a serverless function — it returns Vercel's
    datacenter. Choose: (a) store `lat`/`lon` in user config, (b) use Vercel edge
    `request.geo`, or (c) a one-time browser geolocation prompt persisted to config.
-2. **API-key provisioning.** The spec assumes keys are "provisioned" — there is no
-   signup flow. Decide between manual seeding for v1 vs. a provisioning endpoint.
-3. **Cron function timeout.** ~15+ feeds fetched in one invocation can exceed the
+2. **Cron function timeout.** ~15+ feeds fetched in one invocation can exceed the
    function duration limit even with `Promise.allSettled`. Confirm the Vercel plan
    limit; consider batching or per-source sub-requests if needed.
-4. **KV provider.** Vercel KV is now provisioned via the Vercel Marketplace (Upstash
+3. **KV provider.** Vercel KV is now provisioned via the Vercel Marketplace (Upstash
    Redis). Confirm whether to use it through Vercel or integrate Upstash directly.
-5. **Config editing.** v1 may ship with no editing UI (config is POSTed or seeded). A
+4. **Config editing.** v1 may ship with no editing UI (config is POSTed or seeded). A
    settings UI to add/reorder widgets is the main scope fork — see
    [`design/06-architecture.md`](../design/06-architecture.md).
