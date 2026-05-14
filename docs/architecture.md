@@ -8,34 +8,39 @@ specs), see [`design/`](../design). For the original build-vs-rewrite mapping, s
 [`design/06-architecture.md`](../design/06-architecture.md). This doc is the
 consolidated, current view.
 
-> **⚠️ Divergence from the spec.** The design docs (`02-aesthetic-and-rendering.md`,
+> **Relationship to the spec.** The design docs (`02-aesthetic-and-rendering.md`,
 > `06-architecture.md`) describe a server-rendered "static document" with near-zero
-> client JS and *no client-side data fetching*. This architecture **consciously
-> overrides that**: frontdoor is built as a **client SPA + JSON API**, so the same API
-> can back React Native iOS/Android apps post-MVP. The cost is the original
-> "zero-framework-feel" IP — loading states, hydration, and client-side fetching are
-> now in scope. This was a deliberate product decision; the spec's anti-goals on this
-> point no longer hold.
+> client JS. This architecture **keeps that for the web** — via per-user **ISR**
+> (Incremental Static Regeneration) instead of a one-shot build — and **adds a JSON
+> API** alongside it so the same data layer can back React Native iOS/Android apps
+> post-MVP. The web stays a static-feeling document; the API is the extension the spec
+> didn't anticipate. This is the hybrid: one data layer, two delivery paths.
 
 ---
 
 ## 1. Overview
 
-frontdoor is a **client SPA + JSON API**, both hosted on Vercel. The web frontend and
-(post-MVP) React Native apps are **peer clients** of one API — they fetch config and
-widget data over HTTP with a Bearer token. Content is still fetched from upstream
-sources server-side and cached daily; clients never call third-party APIs directly.
+frontdoor is a **Next.js app on Vercel** with two delivery paths over **one shared data
+layer**:
+
+- **Web** — server-rendered pages, statically cached **per user via ISR**. A page load
+  is a cache hit: instant paint, near-zero client JS, no loading states on the hot path.
+  Pages are revalidated daily by cron and on-demand when the user edits their config.
+- **JSON API** — the same data layer exposed as HTTP endpoints with Bearer auth, for
+  **React Native iOS/Android apps** (post-MVP).
+
+Content is fetched from upstream sources server-side and cached daily; neither clients
+nor the browser ever call third-party APIs directly.
 
 There are four tiers of services:
 
-1. **Platform** — the Vercel ecosystem (hosting, serverless API routes, KV store, cron).
+1. **Platform** — the Vercel ecosystem (hosting, ISR, serverless API routes, KV, cron).
 2. **External data sources** — keyless content APIs and RSS feeds, fetched server-side
-   by the API layer.
+   by the data layer.
 3. **Auth & signup** — a hand-rolled per-user API-key scheme (no third-party identity
    provider); self-service signup via a `curl`-able endpoint, with the key delivered by
    email through **Resend**.
-4. **Clients** — the web SPA today; React Native iOS/Android apps post-MVP. All consume
-   the same API.
+4. **Clients** — the ISR web app today; React Native iOS/Android apps post-MVP.
 
 There is **no relational database** in v1. Vercel KV (Redis) holds everything: user
 config, the API-key index, and the daily content cache.
@@ -44,18 +49,43 @@ config, the API-key index, and the daily content cache.
 
 ## 2. System diagram
 
+### 2.1 Overview
+
+The shape of the system in one glance — clients, the app, the cache, and a daily cron.
+Widget-level data sources are collapsed into one box here; see §2.2 for the full view.
+
+```mermaid
+graph LR
+    WEB[Web]
+    RN[React Native<br/>post-MVP]
+    APP[frontdoor on Vercel<br/>ISR web + JSON API<br/>+ shared data layer]
+    KV[(Vercel KV<br/>config + daily cache)]
+    SRC[External content sources]
+    CRON[Daily cron<br/>warm cache + revalidate]
+
+    WEB --> APP
+    RN --> APP
+    APP <--> KV
+    APP --> SRC
+    CRON --> APP
+```
+
+### 2.2 Detailed
+
 ```mermaid
 graph TB
     subgraph Clients
-        WEB[Web SPA<br/>fetches API w/ Bearer]
-        RN[React Native apps<br/>post-MVP]
+        WEB[Web browser<br/>loads ISR page — cookie auth]
+        RN[React Native apps<br/>post-MVP — Bearer auth]
     end
 
     subgraph Vercel
-        AUTH[Auth middleware<br/>Bearer key validation]
+        ISR[ISR page<br/>per-user, statically cached]
+        AUTH[Auth middleware<br/>cookie / Bearer → userId]
         KEYS[/api/keys<br/>self-service signup/]
-        CONFIG[/api/config<br/>GET/PUT user config/]
+        CONFIG[/api/config<br/>GET/PUT — PUT triggers revalidate/]
         WAPI[/api/widget/*<br/>per-widget data endpoints/]
+        REVAL[/api/revalidate<br/>cron + edit-triggered/]
         DL[Data layer<br/>fetchers + cache reads]
         REFRESH[/api/refresh<br/>cron-protected/]
         CRON[Vercel Cron<br/>0 3 * * *]
@@ -84,19 +114,21 @@ graph TB
     KEYS -->|send key email| RESEND
     RESEND -.->|key link| WEB
 
-    WEB -->|Bearer key| AUTH
+    WEB -->|GET / cookie| AUTH
+    AUTH --> ISR
+    ISR -->|render reads| DL
     RN -->|Bearer key| AUTH
-    AUTH -->|validate key| KV
     AUTH --> CONFIG
     AUTH --> WAPI
     CONFIG -->|read/write| KV
+    CONFIG -->|on PUT| REVAL
     WAPI --> DL
     DL -->|read date-stamped cache| KV
     DL -->|weather: per-location, on miss| METEO
-    WEB -->|favicon URLs| ICON
-    RN -->|favicon URLs| ICON
+    REVAL -->|revalidate user's ISR page| ISR
 
     CRON -->|daily trigger + CRON_SECRET| REFRESH
+    CRON -->|daily trigger + CRON_SECRET| REVAL
     REFRESH -->|fan-out Promise.allSettled| RSS
     REFRESH --> NASA
     REFRESH --> BING
@@ -136,54 +168,92 @@ sequenceDiagram
         API->>R: send key email
     end
     API-->>U: 202 { "status": "check your email" }
-    Note over U,R: email arrives → user opens /?key=... → client stores key (§3.2)
+    Note over U,R: email arrives → user opens /?key=... → cookie handoff (§3.2)
 ```
 
-### 3.2 Page load
+### 3.2 Web page load — ISR cache hit
 
-The SPA shell loads first (static assets, no user data), reads the stored API key,
-fetches the user's config, then fans out to the per-widget endpoints. Each widget shows
-a quiet loading state until its data arrives. React Native apps follow the identical
-sequence — they are peer clients of the same endpoints.
+The common case is a **static cache hit**: the user's page was already rendered (by the
+last cron revalidation or their last config edit) and is served straight from the ISR
+cache. No data fetching, no function work on the hot path — instant paint.
 
 ```mermaid
 sequenceDiagram
-    participant C as Client (web SPA / RN)
+    participant B as Browser
+    participant MW as Auth middleware
+    participant ISR as ISR page cache
+    participant KV as Vercel KV
+
+    Note over B,MW: First visit — bootstrap from URL key
+    B->>MW: GET /?key=abc123
+    MW->>KV: GET key:abc123 → userId
+    MW-->>B: Set httpOnly cookie, 302 → /
+
+    Note over B,ISR: Normal load — cookie session
+    B->>MW: GET / (cookie)
+    MW->>MW: cookie → userId
+    MW->>ISR: request user's cached page
+    ISR-->>B: pre-rendered HTML (cache hit — no data fetch)
+
+    Note over B,MW: Invalid / missing key
+    B->>MW: GET / (no valid cookie)
+    MW-->>B: minimal "enter your key" page
+```
+
+### 3.3 Revalidation — how a page gets (re)built
+
+A user's ISR page is re-rendered on two triggers. Rendering reads the **same data
+layer** the API uses — global content from the cron-warmed KV cache, weather lazily.
+
+```mermaid
+sequenceDiagram
+    participant T as Trigger
+    participant RV as /api/revalidate
+    participant R as Renderer (RSC)
+    participant DL as Data layer
+    participant KV as Vercel KV
+
+    alt daily — cron
+        T->>RV: cron + CRON_SECRET (after /api/refresh warms KV)
+        RV->>RV: revalidate all users' pages
+    else on edit — PUT /api/config
+        T->>RV: revalidate this user's page
+    end
+    RV->>R: re-render page(s)
+    R->>DL: get config + widget data
+    DL->>KV: read config:{userId} + {source}:{date}
+    KV-->>R: data
+    R-->>KV: (ISR stores the new rendered page)
+```
+
+### 3.4 React Native page load — API fan-out
+
+RN apps have no ISR page; they fetch JSON. The app reads its stored key, calls
+`/api/config`, then fans out to the per-widget endpoints, rendering natively as data
+arrives.
+
+```mermaid
+sequenceDiagram
+    participant C as RN app
     participant A as Auth middleware
     participant API as /api/config + /api/widget/*
     participant KV as Vercel KV
-    participant M as Open-Meteo
-
-    Note over C: Bootstrap — first run only
-    C->>C: read ?key= from URL (web) → store key, clean URL
-    Note over C,A: Every load — Bearer key on every request
 
     C->>A: GET /api/config (Bearer key)
-    A->>KV: GET key:{apiKey} → userId
-    A->>KV: GET config:{userId}
+    A->>KV: GET key:{apiKey} → userId; GET config:{userId}
     KV-->>C: dashboard config JSON
-
     par per-widget fan-out
         C->>API: GET /api/widget/headlines?feeds=...&count=7 (Bearer)
         API->>KV: GET headlines:{hash}:{YYYY-MM-DD}
         KV-->>C: cached headlines
     and
         C->>API: GET /api/widget/weather?lat=..&lon=.. (Bearer)
-        API->>KV: GET weather:{lat,lon}:{YYYY-MM-DD}
-        alt cache miss
-            API->>M: fetch current + 3-day forecast
-            M-->>API: weather data → write KV
-        end
-        KV-->>C: weather data
+        KV-->>C: cached weather (or lazy fetch on miss)
     and
         C->>API: GET /api/widget/text?source=quote (Bearer)
         KV-->>C: cached quote
     end
-    C->>C: render widgets as data arrives
-
-    Note over C,A: Invalid / missing key
-    C->>A: GET /api/config (bad/no key)
-    A-->>C: 401 → client shows "enter your key" screen
+    C->>C: render natively as data arrives
 ```
 
 ---
@@ -194,10 +264,11 @@ sequenceDiagram
 
 | Service | Role |
 |---------|------|
-| **Vercel** | Hosting (static SPA assets + serverless API routes), CDN edge cache |
+| **Vercel** | Hosting — Next.js app (ISR pages + serverless API routes), CDN edge |
+| **Vercel ISR** | Per-user statically-rendered pages; revalidated by cron + on config edit |
 | **Vercel KV** (Redis) | Single source of truth — user config, API-key index, daily content cache |
-| **Vercel Cron** | Triggers `/api/refresh` daily at `0 3 * * *` |
-| **Vercel Edge / CDN** | Caches public widget-endpoint responses via `s-maxage` (see §5) |
+| **Vercel Cron** | Daily at `0 3 * * *` — triggers `/api/refresh` then `/api/revalidate` |
+| **Vercel Edge / CDN** | Caches public widget-endpoint responses via `s-maxage` (see §6) |
 
 ### External data sources
 
@@ -231,82 +302,89 @@ keyless **except NASA APOD**.
 
 ### Auth & signup
 
-No third-party identity provider. Because web and React Native are peer clients of one
-API, **auth is a uniform `Authorization: Bearer {apiKey}` header on every request** — no
-cookies, no session middleware that only works in a browser.
+No third-party identity provider. The same per-user API key authenticates both paths,
+but the **transport differs by client** — because the web is server-rendered, it can use
+the safer cookie mechanism, while RN needs a portable token:
 
-- **Per-user API key** — minted by `POST /api/keys` at signup (see §3.1), delivered by
-  email. The web SPA bootstraps it from `?key=` on first run, stores it (see open
-  decision below), and cleans the URL; React Native apps store it in the OS keychain /
-  secure store. Every API request carries it as a Bearer token; the auth middleware
+- **Web — `httpOnly` cookie.** The key bootstraps from `?key=` on first visit; the auth
+  middleware validates it against KV, sets an `httpOnly` cookie, and redirects to a
+  clean URL. The cookie is the session; the query param is bootstrap-only (it leaks via
+  logs, history, `Referer`). The cookie → `userId` selects which ISR page to serve.
+- **React Native — `Authorization: Bearer {apiKey}`.** The app stores the key in the OS
+  keychain / secure store and sends it on every API request. The auth middleware
   resolves `key:{apiKey}` → `userId`.
 - **`RESEND_API_KEY`** — authenticates outbound mail to Resend.
-- **`CRON_SECRET`** — bearer token Vercel attaches to cron requests; `/api/refresh`
-  rejects anything without it so it can't be triggered publicly.
+- **`CRON_SECRET`** — bearer token Vercel attaches to cron requests; `/api/refresh` and
+  `/api/revalidate` reject anything without it so they can't be triggered publicly.
 
 `POST /api/keys` is a public, unauthenticated endpoint, so it is **rate-limited on both
 IP and email** (it triggers outbound email — a spam vector). The authenticated widget
 and config endpoints are **rate-limited per API key**. Upstash Ratelimit fits cleanly
 since KV is already Upstash Redis.
 
-**CORS** — the API is now called cross-origin (the SPA and, later, RN apps). Lock the
-`Access-Control-Allow-Origin` allowlist to the known web origin(s); RN apps are not
-subject to CORS but still send the Bearer key.
+**CORS** — the JSON API is called cross-origin by RN apps (and any future clients). Lock
+the `Access-Control-Allow-Origin` allowlist; the web path is same-origin (server-rendered)
+so it is not affected.
 
 ### Clients
 
-| Client | Status | Notes |
-|--------|--------|-------|
-| **Web SPA** | v1 | Fetches `/api/config` then fans out to `/api/widget/*`. Stores the API key client-side. |
-| **React Native (iOS/Android)** | post-MVP | Same endpoints, same Bearer auth. Key in secure storage. The FE/BE split exists specifically to enable this. |
+| Client | Status | Delivery | Auth |
+|--------|--------|----------|------|
+| **Web** | v1 | Per-user ISR page, server-rendered, statically cached | `httpOnly` cookie |
+| **React Native (iOS/Android)** | post-MVP | JSON API fan-out, rendered natively | `Bearer` key in secure storage |
 
 ---
 
 ## 5. API surface
 
-All endpoints under `/api`. Authenticated endpoints require `Authorization: Bearer
-{apiKey}`. Responses are JSON.
+All endpoints under `/api`. The `Bearer`-auth endpoints serve **React Native** (and any
+future API clients); the **web path does not use them** — its ISR render reads the data
+layer in-process. Responses are JSON.
 
 | Endpoint | Auth | Purpose |
 |----------|------|---------|
 | `POST /api/keys` | public | Signup — `{ email }` → mints key, seeds config, emails key (§3.1) |
-| `GET /api/config` | Bearer | The caller's dashboard config JSON |
-| `PUT /api/config` | Bearer | Replace the caller's config (Zod-validated; see open decision on editing) |
+| `GET /api/config` | Bearer / cookie | The caller's dashboard config JSON |
+| `PUT /api/config` | Bearer / cookie | Replace the caller's config (Zod-validated); **triggers `/api/revalidate` for the user's ISR page** |
 | `GET /api/widget/headlines` | Bearer | `?feeds=...&count=N` → interleaved headlines |
 | `GET /api/widget/weather` | Bearer | `?lat=..&lon=..` → current + 3-day forecast |
 | `GET /api/widget/image` | Bearer | `?source=nasa-apod\|bing-daily\|wikimedia-potd` |
 | `GET /api/widget/text` | Bearer | `?source=quote\|stoic\|poem\|onthisday\|wikipedia\|word` |
-| `POST /api/refresh` | `CRON_SECRET` | Cron-only — re-warms the global cache |
+| `POST /api/refresh` | `CRON_SECRET` | Cron-only — re-warms the global content cache in KV |
+| `POST /api/revalidate` | `CRON_SECRET` / internal | Re-renders ISR page(s): all users (cron) or one user (after a config edit) |
 
 **Design rule: widget endpoints are keyed by content params, never by user.** A
 `headlines` request with the same `feeds`+`count` returns the identical payload for
 every user, so the response is cacheable and shared (see §6). `links` and `launcher`
-widgets need *no* endpoint — they are pure config, rendered straight from `/api/config`.
-The client reads its config, then calls one widget endpoint per data-backed widget
-(`headlines`, `weather`, `image`, `text`), passing that widget's params.
+widgets need *no* endpoint — they are pure config. Both delivery paths sit on the same
+data layer: the web ISR render calls it as functions; the JSON API exposes it over HTTP.
 
 ---
 
 ## 6. Caching strategy
 
-**Do we need per-user caching? No.** Putting an API in front of the widgets doesn't
-change *what varies*. Widget content is still either **global** (RSS, NASA, Bing,
-Wikimedia, quote, poem, onthisday, word — identical for every user) or **per-location**
-(weather — varies by lat/lon, not by user). The only per-user thing is the **config**,
-and that lives in KV as a source of truth, not a cache. Because widget endpoints are
-keyed by content params (§5), their responses are shared across all users regardless of
-client count. A per-user assembled-dashboard cache would only add invalidation cost
-(every config edit busts it) for no gain — skip it.
+**Two distinct kinds of cache — keep them separate in your head:**
 
-Three layers:
+1. **Per-user *rendered page* (ISR).** Yes, this is per-user — but it caches *assembled
+   HTML*, not upstream content. It is cheap to store, and revalidated narrowly (one
+   user's page on their edit; all pages once daily on cron). This is what makes the web
+   load instant.
+2. **Per-user *content data*? No — never.** The data the page is built from doesn't vary
+   by user. It is either **global** (RSS, NASA, Bing, Wikimedia, quote, poem, onthisday,
+   word — identical for everyone) or **per-location** (weather — varies by lat/lon, not
+   by user). Caching content per user would multiply storage and tank hit rates for
+   zero benefit. The only genuinely per-user *datum* is the **config**, which lives in
+   KV as a source of truth, not a cache.
 
-1. **Edge / CDN** — widget-endpoint responses carry `Cache-Control: s-maxage` so
-   Vercel's edge serves repeat requests without invoking a function. Keyed by request
-   URL (i.e. content params), so naturally shared across users.
-2. **KV daily cache** — the date-stamped source of truth behind the API (below).
-3. **Cron warming** — keeps the KV cache fresh (below).
+So: the ISR layer is per-user; everything beneath it is shared. Layers, top to bottom:
 
-The two KV-level strategies, split by *what varies*:
+| Layer | Scope | Keyed by | Refreshed by |
+|-------|-------|----------|--------------|
+| **ISR rendered page** | per-user | `userId` | cron daily + config-edit (§3.3) |
+| **Edge / CDN** (API responses) | shared | request URL = content params | `s-maxage` TTL |
+| **KV daily content cache** | shared (global / per-location) | `{source}:{date}` | cron `/api/refresh` + lazy miss |
+
+The KV content layer has two strategies, split by *what varies*:
 
 ```mermaid
 graph LR
@@ -350,25 +428,33 @@ graph LR
 
 ---
 
-## 7. Client rendering model
+## 7. Rendering model
 
-> This section replaces the spec's RSC-based model — see the divergence note at the top.
+The web largely **keeps the spec's model** (`02-aesthetic-and-rendering.md`): server-
+rendered, near-zero client JS, no client-side content fetching. The only change from the
+spec is *when* it renders — per-user **ISR** instead of a one-shot build.
 
-- **The web frontend is a client SPA.** It renders the 6-section layout and all 7 widget
-  types on the client from JSON fetched via the API. There is a brief shell load, then
-  per-widget loading states until each endpoint responds.
-- **Widgets are presentational components fed by data fetched from `/api/widget/*`.**
-  `links` and `launcher` render straight from `/api/config` (no data endpoint);
-  `headlines`, `weather`, `image`, `text` each fetch their endpoint.
-- **The clock and search bar** behave as before — but in an SPA everything is client
-  code, so they are no longer a special case.
-- The **search shortcut map** is built on the client by walking the `links`/`launcher`
-  widgets in the fetched config for `key` fields, deduped (warn on collision).
-- `theme.css` ships as a global stylesheet. No CSS framework, no component library —
-  this part of the original ethos still holds.
-- **React Native apps** reuse the data model and API contract, not the DOM components;
-  the widget *layout logic* and config schema are the shared surface, the rendering is
-  platform-native.
+**Web (ISR):**
+
+- **All 7 widgets are React Server Components.** They render to HTML on the server,
+  reading the data layer in-process — no client-side fetch, no loading states on the
+  hot path. The rendered page is stored in the ISR cache per user.
+- **The only client components are `<Clock/>` and `<SearchBar/>`** — the entire client
+  bundle is single-digit KB. Hydration is near-instant and invisible.
+- **`links` and `launcher`** render straight from the user's config; `headlines`,
+  `weather`, `image`, `text` read their data from the data layer at render time.
+- The **search shortcut map** is built at render time by walking the `links`/`launcher`
+  widgets for `key` fields, deduped (warn on collision), passed to `<SearchBar/>` as a
+  prop.
+- A page is (re)rendered only on revalidation (§3.3), never on a normal page load.
+- `theme.css` ships as a global stylesheet. No CSS framework, no component library.
+
+**React Native (post-MVP):**
+
+- Reuses the **data model, config schema, and API contract** — not the DOM components.
+- Fetches `/api/config` then the per-widget endpoints (§3.4) and renders natively.
+- The widget *layout logic* (the 6-section arc, spans, ordering) is the shared surface;
+  the rendering is platform-native.
 
 ---
 
@@ -379,24 +465,26 @@ graph LR
 - **API-key provisioning.** Self-service via `POST /api/keys` with an email; key minted,
   default config seeded, delivered by email through Resend (see §3.1). Replaces the
   spec's vague "provisioned manually."
-- **Frontend/backend split.** Client SPA + JSON API, web and React Native as peer
-  clients (see the divergence note at the top, §5, §7). Consciously overrides the
-  spec's server-rendered "static document" model.
+- **Delivery model.** Hybrid: web is **per-user ISR** (server-rendered, statically
+  cached, keeps the spec's static-document feel); a **JSON API** on the same data layer
+  serves React Native post-MVP. Web auth = `httpOnly` cookie, RN auth = `Bearer` key.
 
 **Still open:**
 
-1. **Where the web SPA stores the API key.** `localStorage` (simple, survives reloads,
-   but readable by any XSS) vs. a non-`httpOnly` cookie vs. an in-memory + refresh
-   scheme. RN uses secure storage regardless. Pick the web story deliberately — the key
-   is a long-lived bearer credential.
-2. **Geolocation.** Never IP-geolocate from a serverless function — it returns Vercel's
+1. **Per-user ISR addressing.** How is a user's ISR page keyed/routed — a dynamic route
+   resolved from the cookie, or a non-secret per-user slug path? Affects cacheability
+   and how `/api/revalidate` targets one user.
+2. **ISR revalidation fan-out at scale.** Cron revalidating *every* user's page in one
+   window is O(users) of render work — fine for small N, a pipeline concern at large N.
+   Consider staggering, on-read revalidation, or revalidate-only-active-users.
+3. **Geolocation.** Never IP-geolocate from a serverless function — it returns Vercel's
    datacenter. Choose: (a) store `lat`/`lon` in user config, (b) one-time browser
    geolocation prompt persisted to config, or (c) device geolocation on RN.
-3. **Cron function timeout.** ~15+ feeds fetched in one invocation can exceed the
+4. **Cron function timeout.** ~15+ feeds fetched in one invocation can exceed the
    function duration limit even with `Promise.allSettled`. Confirm the Vercel plan
    limit; consider batching or per-source sub-requests if needed.
-4. **KV provider.** Vercel KV is now provisioned via the Vercel Marketplace (Upstash
+5. **KV provider.** Vercel KV is now provisioned via the Vercel Marketplace (Upstash
    Redis). Confirm whether to use it through Vercel or integrate Upstash directly.
-5. **Config editing.** v1 may ship with no editing UI (config `PUT` via API directly).
+6. **Config editing.** v1 may ship with no editing UI (config `PUT` via API directly).
    A settings UI to add/reorder widgets is the main scope fork — see
    [`design/06-architecture.md`](../design/06-architecture.md).
