@@ -82,7 +82,7 @@ graph TB
     end
 
     subgraph Vercel
-        ISR[ISR page<br/>per-user, statically cached]
+        ISR["ISR page /d/[slug]<br/>per-user, statically cached"]
         AUTH[Auth middleware<br/>cookie / Bearer → userId]
         KEYS[/api/keys<br/>self-service signup/]
         CONFIG[/api/config<br/>GET/PUT — PUT triggers revalidate/]
@@ -116,7 +116,8 @@ graph TB
     KEYS -->|send key email| RESEND
     RESEND -.->|key link| WEB
 
-    WEB -->|GET / cookie| AUTH
+    WEB -->|GET /d/slug + cookie| AUTH
+    AUTH -->|validate cookie / key| KV
     AUTH --> ISR
     ISR -->|render reads| DL
     RN -->|Bearer key| AUTH
@@ -127,10 +128,12 @@ graph TB
     WAPI --> DL
     DL -->|read date-stamped cache| KV
     DL -->|weather: per-location, on miss| METEO
-    REVAL -->|revalidate user's ISR page| ISR
+    REVAL -->|revalidatePath /d/slug| ISR
+    WEB -.->|favicon img| ICON
+    RN -.->|favicon img| ICON
 
     CRON -->|daily trigger + CRON_SECRET| REFRESH
-    CRON -->|daily trigger + CRON_SECRET| REVAL
+    REFRESH -->|on success| REVAL
     REFRESH -->|fan-out Promise.allSettled| RSS
     REFRESH --> NASA
     REFRESH --> BING
@@ -163,44 +166,56 @@ sequenceDiagram
     API->>API: validate email + rate-limit (IP + email)
     API->>KV: GET email:{email}
     alt already registered
-        KV-->>API: userId exists
+        KV-->>API: userId → GET user:{userId}.apiKey
         API->>R: re-send existing key
     else new user
-        API->>KV: SET key:{apiKey}, config:{userId},<br/>email:{email}, user:{userId}
+        API->>KV: SET key:{apiKey}, slug:{slug}, email:{email},<br/>user:{userId} (incl. apiKey+slug), config:{userId}; SADD users
         API->>R: send key email
     end
     API-->>U: 202 { "status": "check your email" }
-    Note over U,R: email arrives → user opens /?key=... → cookie handoff (§3.2)
+    Note over U,R: email arrives → user opens /?key=... → cookie handoff → /d/{slug} (§3.2)
 ```
 
 ### 3.2 Web page load — ISR cache hit
 
+**Each user's dashboard is its own route, `/d/[slug]`.** The `slug` is a short,
+non-secret per-user id (minted at signup, stored on the user record) — *not* the API
+key. This is what makes per-user ISR work: ISR caches by route path, so every user has
+their own statically-cached page. The slug only **addresses** the page; the `httpOnly`
+cookie still **gates access** — a leaked slug renders nothing without a valid cookie.
+
 The common case is a **static cache hit**: the user's page was already rendered (by the
 last cron revalidation or their last config edit) and is served straight from the ISR
-cache. No data fetching, no function work on the hot path — instant paint.
+cache — no data fetching, no render work on the hot path.
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
     participant MW as Auth middleware
-    participant ISR as ISR page cache
+    participant ISR as ISR page cache (/d/[slug])
     participant KV as Vercel KV
 
     Note over B,MW: First visit — bootstrap from URL key
     B->>MW: GET /?key=abc123
-    MW->>KV: GET key:abc123 → userId
-    MW-->>B: Set httpOnly cookie, 302 → /
+    MW->>KV: GET key:abc123 → userId, slug
+    MW-->>B: Set httpOnly cookie (signed: userId+slug), 302 → /d/{slug}
 
     Note over B,ISR: Normal load — cookie session
-    B->>MW: GET / (cookie)
-    MW->>MW: cookie → userId
-    MW->>ISR: request user's cached page
+    B->>MW: GET /d/{slug} (cookie)
+    MW->>MW: verify signed cookie → userId, slug (no KV round-trip)
+    MW->>MW: check cookie.slug matches path slug
+    MW->>ISR: serve cached page for /d/{slug}
     ISR-->>B: pre-rendered HTML (cache hit — no data fetch)
 
-    Note over B,MW: Invalid / missing key
-    B->>MW: GET / (no valid cookie)
+    Note over B,MW: Invalid / missing / mismatched cookie
+    B->>MW: GET /d/{slug} or / (no valid cookie)
     MW-->>B: minimal "enter your key" page
 ```
+
+> **Hot-path cost.** Middleware runs on every request. To keep the cache hit genuinely
+> instant, the cookie is **signed and carries `userId`+`slug`**, so the normal-load path
+> verifies a signature instead of doing a KV round-trip. KV is only hit on the
+> first-visit bootstrap and on auth failures.
 
 ### 3.3 Revalidation — how a page gets (re)built
 
@@ -215,11 +230,12 @@ sequenceDiagram
     participant DL as Data layer
     participant KV as Vercel KV
 
-    alt daily — cron
-        T->>RV: cron + CRON_SECRET (after /api/refresh warms KV)
-        RV->>RV: revalidate all users' pages
+    alt daily — cron (chained after /api/refresh succeeds)
+        T->>RV: cron + CRON_SECRET
+        RV->>KV: SMEMBERS users → userIds → resolve each slug
+        RV->>RV: revalidatePath('/d/{slug}') for each
     else on edit — PUT /api/config
-        T->>RV: revalidate this user's page
+        T->>RV: revalidatePath('/d/{slug}') for this user
     end
     RV->>R: re-render page(s)
     R->>DL: get config + widget data
@@ -308,10 +324,12 @@ No third-party identity provider. The same per-user API key authenticates both p
 but the **transport differs by client** — because the web is server-rendered, it can use
 the safer cookie mechanism, while RN needs a portable token:
 
-- **Web — `httpOnly` cookie.** The key bootstraps from `?key=` on first visit; the auth
-  middleware validates it against KV, sets an `httpOnly` cookie, and redirects to a
-  clean URL. The cookie is the session; the query param is bootstrap-only (it leaks via
-  logs, history, `Referer`). The cookie → `userId` selects which ISR page to serve.
+- **Web — signed `httpOnly` cookie.** The key bootstraps from `?key=` on first visit;
+  the auth middleware validates it against KV once, then sets a **signed** `httpOnly`
+  cookie carrying `userId`+`slug` and redirects to the user's route `/d/{slug}`. The
+  cookie is the session — verified by signature on every load (no KV round-trip); the
+  query param is bootstrap-only (it leaks via logs, history, `Referer`). Middleware also
+  checks the cookie's `slug` matches the path, so one user can't load another's route.
 - **React Native — `Authorization: Bearer {apiKey}`.** The app stores the key in the OS
   keychain / secure store and sends it on every API request. The auth middleware
   resolves `key:{apiKey}` → `userId`.
@@ -332,28 +350,29 @@ so it is not affected.
 
 | Client | Status | Delivery | Auth |
 |--------|--------|----------|------|
-| **Web** | v1 | Per-user ISR page, server-rendered, statically cached | `httpOnly` cookie |
+| **Web** | v1 | Per-user ISR route `/d/[slug]`, server-rendered, statically cached | signed `httpOnly` cookie |
 | **React Native (iOS/Android)** | post-MVP | JSON API fan-out, rendered natively | `Bearer` key in secure storage |
 
 ---
 
 ## 5. API surface
 
-All endpoints under `/api`. The `Bearer`-auth endpoints serve **React Native** (and any
-future API clients); the **web path does not use them** — its ISR render reads the data
-layer in-process. Responses are JSON.
+All endpoints under `/api`. Responses are JSON. The `/api/widget/*` endpoints exist for
+**React Native** (and future API clients) — the **web render never calls them**, it
+reads the data layer in-process. `/api/config` is the exception: it is used by *both*
+RN **and** the web config editor (the web *render* doesn't need it, the *editor* does).
 
 | Endpoint | Auth | Purpose |
 |----------|------|---------|
-| `POST /api/keys` | public | Signup — `{ email }` → mints key, seeds config, emails key (§3.1) |
-| `GET /api/config` | Bearer / cookie | The caller's dashboard config JSON |
-| `PUT /api/config` | Bearer / cookie | Replace the caller's config (Zod-validated); **triggers `/api/revalidate` for the user's ISR page** |
+| `POST /api/keys` | public | Signup — `{ email }` → mints key, slug, seeds config, emails key (§3.1) |
+| `GET /api/config` | Bearer / cookie | The caller's dashboard config JSON (RN + web editor) |
+| `PUT /api/config` | Bearer / cookie | Replace the caller's config (Zod-validated); **triggers `/api/revalidate` for `/d/{slug}`** |
 | `GET /api/widget/headlines` | Bearer | `?feeds=...&count=N` → interleaved headlines |
 | `GET /api/widget/weather` | Bearer | `?lat=..&lon=..` → current + 3-day forecast |
 | `GET /api/widget/image` | Bearer | `?source=nasa-apod\|bing-daily\|wikimedia-potd` |
 | `GET /api/widget/text` | Bearer | `?source=quote\|stoic\|poem\|onthisday\|wikipedia\|word` |
-| `POST /api/refresh` | `CRON_SECRET` | Cron-only — re-warms the global content cache in KV |
-| `POST /api/revalidate` | `CRON_SECRET` / internal | Re-renders ISR page(s): all users (cron) or one user (after a config edit) |
+| `POST /api/refresh` | `CRON_SECRET` | Cron-only — re-warms the global content cache in KV; on success chains to `/api/revalidate` |
+| `POST /api/revalidate` | `CRON_SECRET` / internal | `revalidatePath('/d/{slug}')` — all users (cron, via the `users` set) or one user (after a config edit) |
 
 **Design rule: widget endpoints are keyed by content params, never by user.** A
 `headlines` request with the same `feeds`+`count` returns the identical payload for
@@ -382,9 +401,16 @@ So: the ISR layer is per-user; everything beneath it is shared. Layers, top to b
 
 | Layer | Scope | Keyed by | Refreshed by |
 |-------|-------|----------|--------------|
-| **ISR rendered page** | per-user | `userId` | cron daily + config-edit (§3.3) |
+| **ISR rendered page** | per-user | route `/d/[slug]` | cron daily + config-edit (§3.3) |
 | **Edge / CDN** (API responses) | shared | request URL = content params | `s-maxage` TTL |
 | **KV daily content cache** | shared (global / per-location) | `{source}:{date}` | cron `/api/refresh` + lazy miss |
+
+> **Edge-caching `/api/widget/*` is not automatic** — those endpoints are `Bearer`-
+> authed, and CDNs do not cache responses to requests carrying `Authorization` by
+> default. The payloads genuinely aren't user-specific, so the fix is deliberate:
+> set explicit `Cache-Control: s-maxage` and exclude the `Authorization` header from the
+> edge cache key. Until that's wired up, treat the edge layer as a planned optimization,
+> not a given (see §8, open).
 
 The KV content layer has two strategies, split by *what varies*:
 
@@ -412,21 +438,30 @@ graph LR
 - **Lazy (per-location).** Weather varies by location (not by user). Can't pre-warm
   every location, so `/api/widget/weather` fetches on demand on a KV miss and writes a
   `weather:{lat,lon}:{date}` key — shared by every user at that location.
-- **Resilience.** On a KV miss (cron failed / cold key) or an API error, the endpoint
+- **Resilience.** On a KV miss (cron failed / cold key) or an API error, the data layer
   falls back to a live fetch, then to stale data, then to a structured "could not load"
-  payload — it never 500s. Each widget endpoint fails independently, so one dead feed
+  payload — it never throws. Each source degrades independently, so one dead feed
   degrades one widget, not the page.
+- **Source-specific quirks** are absorbed by the data layer, not the cache: e.g. NASA
+  APOD is a *video* on some days (`media_type != "image"`) — the fetcher treats that as
+  "no image today" and falls back to the last cached image (see `design/04-data-sources.md`).
 
 ### KV key spaces
 
 | Key | Value |
 |-----|-------|
 | `key:{apiKey}` | `userId` |
-| `email:{email}` | `userId` — signup idempotency + key recovery |
-| `user:{userId}` | `{ email, createdAt }` — account record / audit |
+| `email:{email}` | `userId` — signup idempotency |
+| `slug:{slug}` | `userId` — resolves a `/d/[slug]` route to its user |
+| `user:{userId}` | `{ email, apiKey, slug, name?, createdAt }` — account record; `apiKey` here powers the idempotent key re-send (§3.1); `name?` / future profile fields land here |
+| `users` | SET of all `userId`s — lets cron enumerate users to revalidate (§3.3) |
 | `config:{userId}` | dashboard config JSON (see [`design/05-config-schema.md`](../design/05-config-schema.md)) |
-| `{source}:{YYYY-MM-DD}` | cached payload for a global source (e.g. `nasa-apod:2026-05-14`) |
+| `{source}:{YYYY-MM-DD}` | cached payload for a *simple* global source — `nasa-apod`, `bing-daily`, `wikimedia-potd`, `quote`, `poem`, `onthisday`, `wikipedia`, `word` |
+| `headlines:{feedSetHash}:{YYYY-MM-DD}` | cached headlines, keyed by a hash of the feed set + count (headlines vary by which feeds) |
 | `weather:{lat,lon}:{YYYY-MM-DD}` | cached weather payload, shared by location |
+
+> `stoic` has no key — it is fully offline/deterministic (day-of-year index), computed
+> at render time.
 
 ---
 
@@ -476,23 +511,29 @@ spec is *when* it renders — per-user **ISR** instead of a one-shot build.
   migration:** move the account + config domain to **Neon (Postgres) + Drizzle** once a
   concrete query need appears (admin/support views, user search, analytics); KV then
   keeps only the regenerable content cache. Deferred deliberately, not indefinitely.
+- **Per-user ISR addressing.** Each dashboard is its own route `/d/[slug]`, where `slug`
+  is a short non-secret per-user id (minted at signup, stored on the user record). ISR
+  caches by path, so this is what makes per-user static caching work; the signed cookie
+  still gates access. `/api/revalidate` targets a user via `revalidatePath('/d/{slug}')`.
+- **KV provider.** Vercel KV via the Vercel Marketplace (Upstash Redis) — accessed
+  through the Vercel integration. Upstash Ratelimit is used for rate limiting.
 
 **Still open:**
 
-1. **Per-user ISR addressing.** How is a user's ISR page keyed/routed — a dynamic route
-   resolved from the cookie, or a non-secret per-user slug path? Affects cacheability
-   and how `/api/revalidate` targets one user.
-2. **ISR revalidation fan-out at scale.** Cron revalidating *every* user's page in one
-   window is O(users) of render work — fine for small N, a pipeline concern at large N.
-   Consider staggering, on-read revalidation, or revalidate-only-active-users.
+1. **ISR revalidation fan-out at scale.** Enumeration is solved (the `users` set), but
+   cron revalidating *every* user's page in one window is still O(users) of render work
+   — fine for small N, a pipeline concern at large N. Consider staggering, on-read
+   revalidation, or revalidate-only-active-users.
+2. **Edge-caching the `Bearer`-authed `/api/widget/*` endpoints.** Their payloads aren't
+   user-specific, but the `Authorization` header defeats default CDN caching. Needs a
+   deliberate `Cache-Control: s-maxage` + cache-key policy (exclude `Authorization`), or
+   the edge layer in §6 stays a no-op. Contained fix, but unbuilt.
 3. **Geolocation.** Never IP-geolocate from a serverless function — it returns Vercel's
    datacenter. Choose: (a) store `lat`/`lon` in user config, (b) one-time browser
    geolocation prompt persisted to config, or (c) device geolocation on RN.
 4. **Cron function timeout.** ~15+ feeds fetched in one invocation can exceed the
    function duration limit even with `Promise.allSettled`. Confirm the Vercel plan
    limit; consider batching or per-source sub-requests if needed.
-5. **KV provider.** Vercel KV is now provisioned via the Vercel Marketplace (Upstash
-   Redis). Confirm whether to use it through Vercel or integrate Upstash directly.
-6. **Config editing.** v1 may ship with no editing UI (config `PUT` via API directly).
+5. **Config editing.** v1 may ship with no editing UI (config `PUT` via API directly).
    A settings UI to add/reorder widgets is the main scope fork — see
    [`design/06-architecture.md`](../design/06-architecture.md).
