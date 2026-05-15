@@ -271,20 +271,46 @@ graph LR
 - **Depends on:** 1 (can be done early; required before 27)
 - **Parallel with:** everything
 
-### 27. End-to-end smoke test & launch checklist
-- **Deliverable:** full path verified — signup → email → `?key=` → cookie → `/d/{slug}`
-  dashboard; resilience checks (dead feed, KV miss); the `design/02` anti-goals visual
-  pass (no spinners, no layout shift, near-zero client JS).
-- **Depends on:** 23, 25, 26
+### 27. End-to-end test suite (Playwright) + visual launch pass
+- **Deliverable:** a Playwright E2E suite covering the full happy path (signup → email
+  → `?key=` → cookie → `/d/{slug}` dashboard) plus the "enter your key" fallback and
+  slug-mismatch reject; resilience checks scripted (dead feed, KV miss); plus a manual
+  `design/02` anti-goals visual pass (no spinners, no layout shift, near-zero client
+  JS — the eyeball-only bits).
+- **Depends on:** 23, 25, 26, 29
 - **Parallel with:** —
 
 ---
 
+## Testing
+
+- **Stack:** **Vitest** (unit + integration), **MSW** (mock upstream HTTP in fetcher
+  tests), **Playwright** (E2E). Set up by item #29; covers item #27.
+- **Every issue's deliverable includes its tests**, where applicable. The targets are
+  baked into the standard for each item type:
+  - **Data fetchers (#6–#9):** Vitest + MSW — parsing, interleaving, fallback paths,
+    cache-key shape. The high-value tests in this codebase.
+  - **Schema (#3):** Vitest — accept the default config; reject malformed configs by
+    shape; key-collision detection.
+  - **Auth (#20) / Signup (#19) / Config endpoints (#22):** Vitest — cookie sign/verify,
+    slug-mismatch reject, signup idempotency, Zod-rejected PUTs.
+  - **Widgets (#11–#15):** light render tests only — the value lives in the data layer
+    below them; no snapshot tests (brittle, low signal for this UI).
+  - **E2E (#27):** Playwright — the user-visible happy path and the failure surfaces.
+
 ## Notes for issue creation
 
-- **Labels:** suggest `phase-0` / `track-a` / `track-b` / `track-c` / `integration` /
-  `launch`, plus `blocked` where a dependency isn't met.
+- **Labels:** `phase-0` / `track-a` / `track-b` / `track-c` / `integration` / `launch`,
+  plus `blocked` where a dependency isn't met.
 - **Milestones:** one GitHub milestone = "MVP".
 - **Mergeable items:** 10 → 11, and 21 → 19/22, if finer granularity isn't wanted.
 - **Earliest parallel fan-out:** after items 1–4, up to ~8 issues can be in flight at
   once (5, 11, 16, 17, 18, 20, 21 + one of 3/4's stragglers).
+
+## Additions logged outside the original 27
+
+- **#28** — *Acquire API keys for local development* (phase-0, manual config) —
+  precondition to dev, not a build task.
+- **#29** — *Test infrastructure: Vitest + MSW + Playwright* (phase-0) — lands the
+  configs, scripts, CI hook, and example tests. Covered by the **Testing** section
+  above; every subsequent issue includes its tests.
