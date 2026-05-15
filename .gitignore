@@ -9,6 +9,9 @@
 .claude/
 CLAUDE.local.md
 
+# Unclassified — origin TBD, monitoring
+.cache/
+
 # Node / Next.js (for the upcoming rewrite)
 node_modules/
 .next/
