@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>frontdoor</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+
+:root {
+  --bg-deep:       #0a0e17;
+  --bg-surface:    #0f1520;
+  --bg-card:       #131a28;
+  --bg-card-hover: #182030;
+  --border:        #1a2538;
+  --border-glow:   #253550;
+  --text-primary:  #d0dce8;
+  --text-secondary:#8494a7;
+  --text-dim:      #56687d;
+  --accent-cyan:   #4ecdc4;
+  --accent-blue:   #6b9cf0;
+  --accent-violet: #a78bfa;
+  --accent-rose:   #f472b6;
+  --accent-amber:  #fbbf24;
+  --accent-green:  #34d399;
+  --glow-cyan:     rgba(78, 205, 196, 0.06);
+  --glow-blue:     rgba(107, 156, 240, 0.06);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ── Ambient background ── */
+body::before {
+  content: '';
+  position: fixed;
+  top: -30%; left: -10%;
+  width: 60%; height: 60%;
+  background: radial-gradient(ellipse, rgba(78,205,196,0.03) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed;
+  bottom: -20%; right: -10%;
+  width: 50%; height: 50%;
+  background: radial-gradient(ellipse, rgba(107,156,240,0.02) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Grid dots (subtle texture) ── */
+.grid-dots {
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--text-dim) 0.4px, transparent 0.4px);
+  background-size: 40px 40px;
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Layout ── */
+.shell {
+  position: relative;
+  z-index: 1;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 28px 32px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.logo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+  text-shadow: 0 0 12px rgba(78,205,196,0.15);
+}
+
+.logo-dot {
+  display: inline-block;
+  width: 5px; height: 5px;
+  background: var(--accent-cyan);
+  border-radius: 50%;
+  margin-left: 2px;
+  opacity: 0.7;
+}
+
+.tagline {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 1px;
+}
+
+.clock {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 28px;
+  font-weight: 300;
+  color: var(--text-primary);
+  letter-spacing: 2px;
+}
+
+.clock-date {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: right;
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+
+/* ── Search ── */
+.search-bar {
+  position: relative;
+  margin-bottom: 24px;
+}
+
+.search-bar input {
+  width: 100%;
+  padding: 9px 20px 9px 40px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.3s ease;
+}
+
+.search-bar input::placeholder {
+  color: var(--text-dim);
+}
+
+.search-bar input:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 1px rgba(78,205,196,0.1), 0 0 12px rgba(78,205,196,0.04);
+}
+
+.search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* ── Main grid ── */
+.grid {
+  display: grid;
+  gap: 16px;
+  flex: 1;
+}
+
+/* ── Panel base ── */
+.panel {
+  background: var(--bg-card);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 16px;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-glow), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.panel:hover {
+  border-color: var(--border);
+  background: var(--bg-card-hover);
+}
+
+.panel:hover::before {
+  opacity: 1;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.panel-icon {
+  font-size: 12px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.panel-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* ── Panel color accents ── */
+.panel--cyan .panel-icon { background: var(--glow-cyan); color: var(--accent-cyan); }
+.panel--blue .panel-icon { background: var(--glow-blue); color: var(--accent-blue); }
+.panel--violet .panel-icon { background: rgba(167,139,250,0.08); color: var(--accent-violet); }
+.panel--rose .panel-icon { background: rgba(244,114,182,0.08); color: var(--accent-rose); }
+.panel--amber .panel-icon { background: rgba(251,191,36,0.08); color: var(--accent-amber); }
+.panel--green .panel-icon { background: rgba(52,211,153,0.08); color: var(--accent-green); }
+
+/* ── Span classes ── */
+.panel--span-2 { grid-column: span 2; }
+.panel--span-3 { grid-column: span 3; }
+.panel--span-4 { grid-column: span 4; }
+
+/* ── Status bar ── */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 0;
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  opacity: 0.7;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .panel--span-3, .panel--span-4 { grid-column: span 2; }
+}
+
+@media (max-width: 600px) {
+  .grid { grid-template-columns: 1fr !important; }
+  .panel--span-2, .panel--span-3, .panel--span-4 { grid-column: span 1; }
+  .shell { padding: 16px; }
+}
+
+
+/* ── Widget: image ── */
+.image-widget {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.image-widget a {
+  display: block;
+}
+
+.image-widget img {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  opacity: 0.9;
+  transition: opacity 0.3s ease;
+}
+
+.image-widget:hover img {
+  opacity: 1;
+}
+
+.image-caption {
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+.image-caption-title {
+  font-size: 11px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.image-caption-desc {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.image-source {
+  margin-top: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  opacity: 0.5;
+}
+
+/* ── Widget: weather ── */
+.weather-now {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.weather-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.weather-temp {
+  font-size: 28px;
+  font-weight: 300;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.weather-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.weather-details {
+  font-size: 10px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.weather-forecast-compact {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.weather-fc-day {
+  flex: 1;
+  text-align: center;
+  padding: 4px 2px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.02);
+}
+
+.weather-fc-day .fc-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.weather-fc-day .fc-icon {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.weather-fc-day .fc-temps {
+  font-size: 9px;
+  color: var(--text-secondary);
+}
+
+.weather-fc-day .fc-temps span {
+  color: var(--text-dim);
+}
+
+.weather-sun {
+  margin-top: 8px;
+  font-size: 9px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 10px;
+}
+
+/* ── Widget: text ── */
+.text-body {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.text-attribution {
+  margin-top: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+
+.text-attribution a {
+  color: var(--text-dim);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border);
+}
+
+.text-attribution a:hover {
+  color: var(--accent-cyan);
+}
+
+.text-source {
+  margin-top: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  opacity: 0.5;
+}
+
+/* ── Widget: headlines ── */
+.headlines-list {
+  list-style: none;
+}
+
+.headlines-list li {
+  margin-bottom: 2px;
+}
+
+.headlines-list a {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  text-decoration: none;
+  transition: background 0.2s ease;
+  line-height: 1.5;
+}
+
+.headlines-list a:hover {
+  background: rgba(78,205,196,0.06);
+}
+
+.headline-title {
+  font-size: 12px;
+  color: var(--text-primary);
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.headline-source {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.headlines-footer {
+  margin-top: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  opacity: 0.6;
+}
+
+/* ── Widget: section ── */
+.section-divider {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.section-divider-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.section-divider-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border-glow), transparent);
+}
+
+.section-divider-sub {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+
+/* ── Widget: launcher ── */
+.launcher-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.launcher-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  background: transparent;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.launcher-tile:hover {
+  background: rgba(78,205,196,0.08);
+}
+
+.launcher-favicon {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.launcher-favicon--fallback {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  background: var(--glow-cyan);
+}
+
+.launcher-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--text-primary);
+  background: var(--bg-deep);
+  border: 1px solid var(--border-glow);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 10;
+}
+
+.launcher-tile:hover .launcher-tooltip {
+  opacity: 1;
+}
+
+/* ── Widget: links ── */
+.link-list {
+  list-style: none;
+}
+
+.link-list li {
+  margin-bottom: 1px;
+}
+
+.link-list a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 12.5px;
+  transition: all 0.2s ease;
+}
+
+.link-list a:hover {
+  background: rgba(78,205,196,0.06);
+  color: var(--accent-cyan);
+}
+
+.link-list .link-tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.link-list .link-tag--news    { color: var(--accent-amber); background: rgba(251,191,36,0.1); }
+.link-list .link-tag--tech    { color: var(--accent-cyan);  background: rgba(78,205,196,0.1); }
+.link-list .link-tag--ai      { color: var(--accent-violet); background: rgba(167,139,250,0.1); }
+.link-list .link-tag--dev     { color: var(--accent-blue);  background: rgba(91,141,239,0.1); }
+.link-list .link-tag--media   { color: var(--accent-rose);  background: rgba(244,114,182,0.1); }
+.link-list .link-tag--social  { color: var(--accent-green); background: rgba(52,211,153,0.1); }
+.link-list .link-tag--biz     { color: var(--accent-amber); background: rgba(251,191,36,0.08); }
+.link-list .link-tag--finance { color: var(--accent-green); background: rgba(52,211,153,0.08); }
+.link-list .link-tag--default { color: var(--text-dim);     background: var(--bg-surface); }
+
+.link-list .link-key {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  min-width: 18px;
+  text-align: center;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+
+<div class="grid-dots"></div>
+
+<div class="shell">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div>
+        <div class="logo">frontdoor<span class="logo-dot"></span></div>
+        <div class="tagline">local start system v1.0</div>
+      </div>
+    </div>
+    <div style="text-align: right">
+      <div class="clock" id="clock">&nbsp;</div>
+      <div class="clock-date" id="clock-date"></div>
+    </div>
+  </header>
+
+  <!-- Search -->
+  <div class="search-bar">
+    <span class="search-icon">&#9906;</span>
+    <input type="text" id="search" placeholder="search, URL, or shortcut (hn, ny, ws, cg...)" autofocus spellcheck="false" />
+  </div>
+
+  <!-- Widget Grid -->
+  <div class="grid" style="grid-template-columns: repeat(4, 1fr)">
+
+    <div class="panel--span-4" style="background:transparent;border:none;padding:16px 0 4px 0" data-widget-id="w-0-section" data-widget-type="section">
+      <div class="section-divider">
+        <span class="section-divider-title">Good Morning</span>
+        <span class="section-divider-line"></span>
+        <span class="section-divider-sub">pause before you begin</span>
+      </div>
+    </div>
+
+    <div class="panel panel--violet" data-widget-id="w-1-text" data-widget-type="text">
+      <div class="panel-header">
+        <div class="panel-icon">◆</div>
+        <div class="panel-title">Stoic</div>
+      </div>
+      <div class="text-body">You have power over your mind — not outside events. Realize this, and you will find strength.</div>
+      <div class="text-attribution">— Marcus Aurelius</div>
+      <div class="text-source">from the stoics</div>
+    </div>
+
+    <div class="panel panel--amber" data-widget-id="w-2-text" data-widget-type="text">
+      <div class="panel-header">
+        <div class="panel-icon">❝</div>
+        <div class="panel-title">Quote of the Day</div>
+      </div>
+      <div class="text-body">It all depends on what you choose to believe.</div>
+      <div class="text-attribution">— Spencer Johnson</div>
+      <div class="text-source">via zenquotes.io</div>
+    </div>
+
+    <div class="panel panel--cyan" data-widget-id="w-3-text" data-widget-type="text">
+      <div class="panel-header">
+        <div class="panel-icon">◷</div>
+        <div class="panel-title">On This Day · 05/13</div>
+      </div>
+      <div class="text-body">2014 — An explosion at an underground coal mine in southwest Turkey kills 301 miners.
+
+1950 — The inaugural Formula One World Championship race takes place at Silverstone Circuit. The race was won by Giuseppe Farina, who would go on to become the inaugural champion that year.</div>
+      <div class="text-attribution">— On this day — May 13</div>
+      <div class="text-source">via wikipedia</div>
+    </div>
+
+    <div class="panel panel--green" data-widget-id="w-4-text" data-widget-type="text">
+      <div class="panel-header">
+        <div class="panel-icon">Aa</div>
+        <div class="panel-title">Word of the Day</div>
+      </div>
+      <div class="text-body">Of or relating to a numen (divinity); indicating the presence of a divinity.</div>
+      <div class="text-attribution">— numinous (adjective) /ˈnjuːmɪnəs/</div>
+      <div class="text-source">via dictionaryapi.dev</div>
+    </div>
+
+    <div class="panel--span-4" style="background:transparent;border:none;padding:16px 0 4px 0" data-widget-id="w-5-section" data-widget-type="section">
+      <div class="section-divider">
+        <span class="section-divider-title">Launch Pad</span>
+        <span class="section-divider-line"></span>
+        <span class="section-divider-sub">tools & briefings</span>
+      </div>
+    </div>
+
+    <div class="panel panel--amber" data-widget-id="w-6-links" data-widget-type="links">
+      <div class="panel-header">
+        <div class="panel-icon">◑</div>
+        <div class="panel-title">Morning</div>
+      </div>
+      <ul class="link-list">
+        <li><a href="https://reuters.com" target="_blank"><span class="link-tag link-tag--news">news</span><span>Reuters</span></a></li>
+        <li><a href="https://wsj.com" target="_blank"><span class="link-tag link-tag--news">news</span><span>Wall Street Journal</span><span class="link-key">ws</span></a></li>
+        <li><a href="https://nytimes.com" target="_blank"><span class="link-tag link-tag--news">news</span><span>New York Times</span><span class="link-key">ny</span></a></li>
+        <li><a href="https://washingtonpost.com" target="_blank"><span class="link-tag link-tag--news">news</span><span>Washington Post</span><span class="link-key">wp</span></a></li>
+        <li><a href="https://www.morningbrew.com/daily" target="_blank"><span class="link-tag link-tag--news">news</span><span>Morning Brew</span></a></li>
+        <li><a href="https://tldr.tech" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>TLDR Newsletter</span></a></li>
+        <li><a href="https://www.therundown.ai" target="_blank"><span class="link-tag link-tag--ai">ai</span><span>The Rundown AI</span></a></li>
+        <li><a href="https://hbr.org/the-daily" target="_blank"><span class="link-tag link-tag--biz">biz</span><span>HBR Daily</span></a></li>
+        <li><a href="https://finviz.com/map.ashx" target="_blank"><span class="link-tag link-tag--finance">finance</span><span>Finviz</span></a></li>
+        <li><a href="https://bloomberg.com" target="_blank"><span class="link-tag link-tag--finance">finance</span><span>Bloomberg</span></a></li>
+      </ul>
+    </div>
+
+    <div class="panel panel--blue" data-widget-id="w-7-weather" data-widget-type="weather">
+      <div class="panel-header">
+        <div class="panel-icon">◈</div>
+        <div class="panel-title">Weather · Denver</div>
+      </div>
+      <div class="weather-now">
+        <div class="weather-icon">&#9729;</div>
+        <div>
+          <div class="weather-temp">90°</div>
+          <div class="weather-desc">Overcast · Feels 84°</div>
+        </div>
+      </div>
+      <div class="weather-details">
+        <span>H 90° · L 52°</span>
+        <span>Wind 7 mph</span>
+      </div>
+      <div class="weather-details">
+        <span>Humidity 10%</span>
+        <span>UV 8</span>
+        <span>Rain 9%</span>
+      </div>
+      <div class="weather-forecast-compact">
+        <div class="weather-fc-day">
+          <div class="fc-label">Thu</div>
+          <div class="fc-icon">&#9729;</div>
+          <div class="fc-temps">88° <span>62°</span></div>
+        </div>
+        <div class="weather-fc-day">
+          <div class="fc-label">Fri</div>
+          <div class="fc-icon">&#9729;</div>
+          <div class="fc-temps">84° <span>52°</span></div>
+        </div>
+        <div class="weather-fc-day">
+          <div class="fc-label">Sat</div>
+          <div class="fc-icon">&#127782;</div>
+          <div class="fc-temps">74° <span>58°</span></div>
+        </div>
+      </div>
+      <div class="weather-sun">
+        <span>&#9788; 5:47am</span>
+        <span>&#9790; 8:05pm</span>
+      </div>
+    </div>
+
+    <div class="panel panel--amber" data-widget-id="w-8-headlines" data-widget-type="headlines">
+      <div class="panel-header">
+        <div class="panel-icon">▤</div>
+        <div class="panel-title">Top Stories</div>
+      </div>
+      <ul class="headlines-list">
+        <li><a href="https://www.nytimes.com/2026/05/13/us/politics/trump-xi-rivalry.html" target="_blank">
+          <span class="headline-title">Trump and Xi: Beneath the Pomp and Niceties, a Geopolitical Rivalry</span>
+          <span class="headline-source">NYT</span>
+        </a></li>
+        <li><a href="https://www.bbc.com/news/articles/c1w28qw1e0xo?at_medium=RSS&at_campaign=rss" target="_blank">
+          <span class="headline-title">Trade, Iran and Taiwan on the agenda as Trump arrives in China for high-stakes talks with Xi</span>
+          <span class="headline-source">BBC</span>
+        </a></li>
+        <li><a href="https://www.npr.org/2026/05/13/g-s1-121912/foreign-ticket-holders-world-cup-bonds" target="_blank">
+          <span class="headline-title">Foreign ticket holders from World Cup teams' countries won't have to pay bonds to enter U.S.</span>
+          <span class="headline-source">NPR</span>
+        </a></li>
+        <li><a href="https://www.nytimes.com/2026/05/13/us/politics/china-iran-weapons-trump-xi.html" target="_blank">
+          <span class="headline-title">Chinese Firms Plot Secret Arms Sales to Iran, U.S. Officials Say</span>
+          <span class="headline-source">NYT</span>
+        </a></li>
+        <li><a href="https://www.bbc.com/news/articles/cedpvnq7wn1o?at_medium=RSS&at_campaign=rss" target="_blank">
+          <span class="headline-title">Court overturns Alex Murdaugh's murder convictions and orders new trial</span>
+          <span class="headline-source">BBC</span>
+        </a></li>
+        <li><a href="https://www.npr.org/2026/05/13/nx-s1-5816235/kevin-warsh-federal-reserve-chair-jerome-powell" target="_blank">
+          <span class="headline-title">Senate confirms Kevin Warsh as next chair of the Federal Reserve</span>
+          <span class="headline-source">NPR</span>
+        </a></li>
+        <li><a href="https://www.nytimes.com/2026/05/13/world/asia/trump-china-arrival-airport-presidents.html" target="_blank">
+          <span class="headline-title">How China Sent a Message to Trump on His Arrival</span>
+          <span class="headline-source">NYT</span>
+        </a></li>
+      </ul>
+      <div class="headlines-footer">via NYT, BBC, NPR</div>
+    </div>
+
+    <div class="panel panel--violet" data-widget-id="w-9-headlines" data-widget-type="headlines">
+      <div class="panel-header">
+        <div class="panel-icon">▤</div>
+        <div class="panel-title">Tech & AI</div>
+      </div>
+      <ul class="headlines-list">
+        <li><a href="https://arstechnica.com/tech-policy/2026/05/fcc-angers-small-carriers-by-helping-att-and-starlink-buy-echostar-spectrum/" target="_blank">
+          <span class="headline-title">FCC angers small carriers by helping AT&amp;T and Starlink buy EchoStar spectrum</span>
+          <span class="headline-source">Ars</span>
+        </a></li>
+        <li><a href="https://www.theverge.com/policy/930178/citr-rubio-visa-deportation-misinformation-research" target="_blank">
+          <span class="headline-title">Trump administration defends right to ban content moderation experts from US</span>
+          <span class="headline-source">Verge</span>
+        </a></li>
+        <li><a href="https://techcrunch.com/2026/05/13/notion-just-turned-its-workspace-into-a-hub-for-ai-agents/" target="_blank">
+          <span class="headline-title">Notion just turned its workspace into a hub for AI agents</span>
+          <span class="headline-source">TC</span>
+        </a></li>
+        <li><a href="https://blog.google/products-and-platforms/products/search/ai-powered-google-finance-in-europe/" target="_blank">
+          <span class="headline-title">The new AI-powered Google Finance is expanding to Europe.</span>
+          <span class="headline-source">Google AI</span>
+        </a></li>
+        <li><a href="https://openai.com/index/building-codex-windows-sandbox" target="_blank">
+          <span class="headline-title">Building a safe, effective sandbox to enable Codex on Windows</span>
+          <span class="headline-source">OpenAI</span>
+        </a></li>
+        <li><a href="https://huggingface.co/blog/amazon/foundation-model-building-blocks" target="_blank">
+          <span class="headline-title">Building Blocks for Foundation Model Training and Inference on AWS</span>
+          <span class="headline-source">HF</span>
+        </a></li>
+        <li><a href="https://arstechnica.com/science/2026/05/protein-in-homo-erectus-teeth-suggests-denisovans-gave-us-some-of-their-dna/" target="_blank">
+          <span class="headline-title">Protein in Homo erectus teeth suggests Denisovans gave us some of their DNA</span>
+          <span class="headline-source">Ars</span>
+        </a></li>
+      </ul>
+      <div class="headlines-footer">via Ars, Verge, TC, Google AI, OpenAI, HF</div>
+    </div>
+
+    <div class="panel panel--cyan panel--span-4" data-widget-id="w-10-launcher" data-widget-type="launcher">
+      <div class="panel-header">
+        <div class="panel-icon">⊞</div>
+        <div class="panel-title">Apps</div>
+      </div>
+      <div class="launcher-grid" style="grid-template-columns: repeat(12, 1fr)">
+        <a href="https://chat.openai.com" class="launcher-tile" title="ChatGPT [cg]" target="_blank">
+          <span class="launcher-tooltip">ChatGPT [cg]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/chat.openai.com" alt="ChatGPT" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">C</span>
+        </a>
+        <a href="https://claude.ai" class="launcher-tile" title="Claude [cl]" target="_blank">
+          <span class="launcher-tooltip">Claude [cl]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/claude.ai" alt="Claude" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">C</span>
+        </a>
+        <a href="https://gemini.google.com" class="launcher-tile" title="Gemini [gn]" target="_blank">
+          <span class="launcher-tooltip">Gemini [gn]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/gemini.google.com" alt="Gemini" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">G</span>
+        </a>
+        <a href="https://perplexity.ai" class="launcher-tile" title="Perplexity [px]" target="_blank">
+          <span class="launcher-tooltip">Perplexity [px]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/perplexity.ai" alt="Perplexity" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">P</span>
+        </a>
+        <a href="https://midjourney.com" class="launcher-tile" title="Midjourney" target="_blank">
+          <span class="launcher-tooltip">Midjourney</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/midjourney.com" alt="Midjourney" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">M</span>
+        </a>
+        <a href="https://huggingface.co" class="launcher-tile" title="Hugging Face" target="_blank">
+          <span class="launcher-tooltip">Hugging Face</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/huggingface.co" alt="Hugging Face" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">H</span>
+        </a>
+        <a href="https://mail.google.com" class="launcher-tile" title="Gmail [gm]" target="_blank">
+          <span class="launcher-tooltip">Gmail [gm]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/mail.google.com" alt="Gmail" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">G</span>
+        </a>
+        <a href="https://calendar.google.com" class="launcher-tile" title="Calendar [gc]" target="_blank">
+          <span class="launcher-tooltip">Calendar [gc]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/calendar.google.com" alt="Calendar" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">C</span>
+        </a>
+        <a href="https://drive.google.com" class="launcher-tile" title="Drive [gd]" target="_blank">
+          <span class="launcher-tooltip">Drive [gd]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/drive.google.com" alt="Drive" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">D</span>
+        </a>
+        <a href="https://docs.google.com" class="launcher-tile" title="Docs" target="_blank">
+          <span class="launcher-tooltip">Docs</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/docs.google.com" alt="Docs" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">D</span>
+        </a>
+        <a href="https://sheets.google.com" class="launcher-tile" title="Sheets" target="_blank">
+          <span class="launcher-tooltip">Sheets</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/sheets.google.com" alt="Sheets" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">S</span>
+        </a>
+        <a href="https://photos.google.com" class="launcher-tile" title="Photos" target="_blank">
+          <span class="launcher-tooltip">Photos</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/photos.google.com" alt="Photos" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">P</span>
+        </a>
+        <a href="https://github.com" class="launcher-tile" title="GitHub [gh]" target="_blank">
+          <span class="launcher-tooltip">GitHub [gh]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/github.com" alt="GitHub" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">G</span>
+        </a>
+        <a href="https://vscode.dev" class="launcher-tile" title="VS Code" target="_blank">
+          <span class="launcher-tooltip">VS Code</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/vscode.dev" alt="VS Code" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">V</span>
+        </a>
+        <a href="https://notion.so" class="launcher-tile" title="Notion [nt]" target="_blank">
+          <span class="launcher-tooltip">Notion [nt]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/notion.so" alt="Notion" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">N</span>
+        </a>
+        <a href="https://stackoverflow.com" class="launcher-tile" title="Stack Overflow" target="_blank">
+          <span class="launcher-tooltip">Stack Overflow</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/stackoverflow.com" alt="Stack Overflow" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">S</span>
+        </a>
+        <a href="https://figma.com" class="launcher-tile" title="Figma" target="_blank">
+          <span class="launcher-tooltip">Figma</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/figma.com" alt="Figma" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">F</span>
+        </a>
+        <a href="https://vercel.com" class="launcher-tile" title="Vercel" target="_blank">
+          <span class="launcher-tooltip">Vercel</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/vercel.com" alt="Vercel" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">V</span>
+        </a>
+        <a href="https://app.slack.com" class="launcher-tile" title="Slack [sl]" target="_blank">
+          <span class="launcher-tooltip">Slack [sl]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/app.slack.com" alt="Slack" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">S</span>
+        </a>
+        <a href="https://discord.com/app" class="launcher-tile" title="Discord" target="_blank">
+          <span class="launcher-tooltip">Discord</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/discord.com" alt="Discord" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">D</span>
+        </a>
+        <a href="https://web.whatsapp.com" class="launcher-tile" title="WhatsApp" target="_blank">
+          <span class="launcher-tooltip">WhatsApp</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/web.whatsapp.com" alt="WhatsApp" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">W</span>
+        </a>
+        <a href="https://zoom.us" class="launcher-tile" title="Zoom" target="_blank">
+          <span class="launcher-tooltip">Zoom</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/zoom.us" alt="Zoom" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">Z</span>
+        </a>
+        <a href="https://teams.microsoft.com" class="launcher-tile" title="Teams" target="_blank">
+          <span class="launcher-tooltip">Teams</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/teams.microsoft.com" alt="Teams" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">T</span>
+        </a>
+        <a href="https://web.telegram.org" class="launcher-tile" title="Telegram" target="_blank">
+          <span class="launcher-tooltip">Telegram</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/web.telegram.org" alt="Telegram" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">T</span>
+        </a>
+        <a href="https://youtube.com" class="launcher-tile" title="YouTube [yt]" target="_blank">
+          <span class="launcher-tooltip">YouTube [yt]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/youtube.com" alt="YouTube" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">Y</span>
+        </a>
+        <a href="https://open.spotify.com" class="launcher-tile" title="Spotify" target="_blank">
+          <span class="launcher-tooltip">Spotify</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/open.spotify.com" alt="Spotify" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">S</span>
+        </a>
+        <a href="https://x.com" class="launcher-tile" title="Twitter / X" target="_blank">
+          <span class="launcher-tooltip">Twitter / X</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/x.com" alt="Twitter / X" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">T</span>
+        </a>
+        <a href="https://reddit.com" class="launcher-tile" title="Reddit [rd]" target="_blank">
+          <span class="launcher-tooltip">Reddit [rd]</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/reddit.com" alt="Reddit" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">R</span>
+        </a>
+        <a href="https://netflix.com" class="launcher-tile" title="Netflix" target="_blank">
+          <span class="launcher-tooltip">Netflix</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/netflix.com" alt="Netflix" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">N</span>
+        </a>
+        <a href="https://twitch.tv" class="launcher-tile" title="Twitch" target="_blank">
+          <span class="launcher-tooltip">Twitch</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/twitch.tv" alt="Twitch" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">T</span>
+        </a>
+        <a href="https://linkedin.com" class="launcher-tile" title="LinkedIn" target="_blank">
+          <span class="launcher-tooltip">LinkedIn</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/linkedin.com" alt="LinkedIn" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">L</span>
+        </a>
+        <a href="https://maps.google.com" class="launcher-tile" title="Maps" target="_blank">
+          <span class="launcher-tooltip">Maps</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/maps.google.com" alt="Maps" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">M</span>
+        </a>
+        <a href="https://translate.google.com" class="launcher-tile" title="Translate" target="_blank">
+          <span class="launcher-tooltip">Translate</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/translate.google.com" alt="Translate" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">T</span>
+        </a>
+        <a href="https://amazon.com" class="launcher-tile" title="Amazon" target="_blank">
+          <span class="launcher-tooltip">Amazon</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/amazon.com" alt="Amazon" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">A</span>
+        </a>
+        <a href="https://dropbox.com" class="launcher-tile" title="Dropbox" target="_blank">
+          <span class="launcher-tooltip">Dropbox</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/dropbox.com" alt="Dropbox" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">D</span>
+        </a>
+        <a href="https://my.1password.com" class="launcher-tile" title="1Password" target="_blank">
+          <span class="launcher-tooltip">1Password</span>
+          <img class="launcher-favicon" src="https://icon.horse/icon/my.1password.com" alt="1Password" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="launcher-favicon--fallback" style="display:none">1</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="panel--span-4" style="background:transparent;border:none;padding:16px 0 4px 0" data-widget-id="w-11-section" data-widget-type="section">
+      <div class="section-divider">
+        <span class="section-divider-title">Today's View</span>
+        <span class="section-divider-line"></span>
+        <span class="section-divider-sub">a moment of beauty</span>
+      </div>
+    </div>
+
+    <div class="panel panel--blue panel--span-2" data-widget-id="w-12-image" data-widget-type="image">
+      <div class="panel-header">
+        <div class="panel-icon">✦</div>
+        <div class="panel-title">NASA - Picture of the Day</div>
+      </div>
+      <div class="image-widget">
+        <a href="https://apod.nasa.gov/apod/image/2605/Polarissima1024.jpg" target="_blank"><img src="https://apod.nasa.gov/apod/image/2605/Polarissima.jpg" alt="NGC 188: Old Cluster in the New General Catalog" loading="lazy"></a>
+      </div>
+      <div class="image-caption">
+        <div class="image-caption-title">NGC 188: Old Cluster in the New General Catalog</div>
+        <div class="image-caption-desc">The New General Catalog of star clusters and nebulae really isn't so new. In fact, it was published in 1888 - an effort ...</div>
+      </div>
+      <div class="image-source">via NASA APOD API</div>
+    </div>
+
+    <div class="panel panel--cyan panel--span-2" data-widget-id="w-13-image" data-widget-type="image">
+      <div class="panel-header">
+        <div class="panel-icon">◻</div>
+        <div class="panel-title">Bing - Daily</div>
+      </div>
+      <div class="image-widget">
+        <a href="https://www.bing.com/search?q=Alabama+Hills&form=hpcapt&filters=HpDate%3a%2220260513_0700%22" target="_blank"><img src="https://www.bing.com/th?id=OHR.AlabamaHills_EN-US1154221052_1920x1080.jpg&rf=LaDigue_1920x1080.jpg&pid=hp" alt="Rock on, Milky Way!" loading="lazy"></a>
+      </div>
+      <div class="image-caption">
+        <div class="image-caption-title">Rock on, Milky Way!</div>
+        <div class="image-caption-desc">Arch and Milky Way, Alabama Hills, Sierra Nevada, California (© Tim Fitzharris/Minden Pictures)</div>
+      </div>
+      <div class="image-source">via Bing Image Archive</div>
+    </div>
+
+    <div class="panel--span-4" style="background:transparent;border:none;padding:16px 0 4px 0" data-widget-id="w-14-section" data-widget-type="section">
+      <div class="section-divider">
+        <span class="section-divider-title">The Feed</span>
+        <span class="section-divider-line"></span>
+        <span class="section-divider-sub">daily & weekly reads</span>
+      </div>
+    </div>
+
+    <div class="panel panel--cyan" data-widget-id="w-15-links" data-widget-type="links">
+      <div class="panel-header">
+        <div class="panel-icon">◇</div>
+        <div class="panel-title">Daily</div>
+      </div>
+      <ul class="link-list">
+        <li><a href="https://news.ycombinator.com" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>Hacker News</span><span class="link-key">hn</span></a></li>
+        <li><a href="https://arstechnica.com" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>Ars Technica</span></a></li>
+        <li><a href="https://anthropic.com/blog" target="_blank"><span class="link-tag link-tag--ai">ai</span><span>Anthropic Blog</span></a></li>
+        <li><a href="https://openai.com/blog" target="_blank"><span class="link-tag link-tag--ai">ai</span><span>OpenAI Blog</span></a></li>
+        <li><a href="https://www.deeplearning.ai/the-batch/" target="_blank"><span class="link-tag link-tag--ai">ai</span><span>The Batch (deeplearning.ai)</span></a></li>
+        <li><a href="https://ft.com" target="_blank"><span class="link-tag link-tag--finance">finance</span><span>Financial Times</span></a></li>
+        <li><a href="https://cnbc.com" target="_blank"><span class="link-tag link-tag--finance">finance</span><span>CNBC</span></a></li>
+        <li><a href="https://www.bloomberg.com/opinion/authors/ARbTQlRLRjE/matthew-s-levine" target="_blank"><span class="link-tag link-tag--finance">finance</span><span>Matt Levine (Bloomberg)</span></a></li>
+        <li><a href="https://seekingalpha.com" target="_blank"><span class="link-tag link-tag--finance">finance</span><span>Seeking Alpha</span></a></li>
+        <li><a href="https://businessinsider.com" target="_blank"><span class="link-tag link-tag--biz">biz</span><span>Business Insider</span></a></li>
+      </ul>
+    </div>
+
+    <div class="panel panel--blue" data-widget-id="w-16-links" data-widget-type="links">
+      <div class="panel-header">
+        <div class="panel-icon">◳</div>
+        <div class="panel-title">Weekly</div>
+      </div>
+      <ul class="link-list">
+        <li><a href="https://economist.com" target="_blank"><span class="link-tag link-tag--news">news</span><span>The Economist</span></a></li>
+        <li><a href="https://theatlantic.com" target="_blank"><span class="link-tag link-tag--news">news</span><span>The Atlantic</span></a></li>
+        <li><a href="https://hbr.org" target="_blank"><span class="link-tag link-tag--biz">biz</span><span>Harvard Business Review</span></a></li>
+        <li><a href="https://wired.com" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>Wired</span></a></li>
+        <li><a href="https://scientificamerican.com" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>Scientific American</span></a></li>
+        <li><a href="https://stratechery.com" target="_blank"><span class="link-tag link-tag--biz">biz</span><span>Stratechery</span></a></li>
+        <li><a href="https://simonwillison.net" target="_blank"><span class="link-tag link-tag--ai">ai</span><span>Simon Willison's Blog</span></a></li>
+        <li><a href="https://www.ben-evans.com" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>Benedict Evans</span></a></li>
+        <li><a href="https://www.latent.space" target="_blank"><span class="link-tag link-tag--ai">ai</span><span>Latent Space</span></a></li>
+        <li><a href="https://www.lennysnewsletter.com" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>Lenny's Newsletter</span></a></li>
+      </ul>
+    </div>
+
+    <div class="panel panel--green" data-widget-id="w-17-headlines" data-widget-type="headlines">
+      <div class="panel-header">
+        <div class="panel-icon">▤</div>
+        <div class="panel-title">Econ & Finance</div>
+      </div>
+      <ul class="headlines-list">
+        <li><a href="https://fredblog.stlouisfed.org/2026/05/the-peculiar-recent-behavior-of-unemployment/" target="_blank">
+          <span class="headline-title">The peculiar recent behavior of unemployment</span>
+          <span class="headline-source">FRED</span>
+        </a></li>
+        <li><a href="https://marginalrevolution.com/marginalrevolution/2026/05/xavier-nick-and-tristan-podcast-with-me.html?utm_source=rss&utm_medium=rss&utm_campaign=xavier-nick-and-tristan-podcast-with-me" target="_blank">
+          <span class="headline-title">Xavier, Nick, and Tristan podcast with me</span>
+          <span class="headline-source">MR</span>
+        </a></li>
+        <li><a href="https://www.economist.com/finance-and-economics/2026/05/13/is-ai-putting-graduates-out-of-work-already" target="_blank">
+          <span class="headline-title">Is AI putting graduates out of work already?</span>
+          <span class="headline-source">Economist</span>
+        </a></li>
+        <li><a href="https://cepr.org/research/programme-areas/climate-change-and-environment" target="_blank">
+          <span class="headline-title">Climate Change and the Environment</span>
+          <span class="headline-source">VoxEU</span>
+        </a></li>
+        <li><a href="https://fredblog.stlouisfed.org/2026/05/velocity-of-money-the-invisible-pulse-of-the-economy/" target="_blank">
+          <span class="headline-title">Velocity of money: The invisible pulse of the economy : A US-India comparison</span>
+          <span class="headline-source">FRED</span>
+        </a></li>
+        <li><a href="https://marginalrevolution.com/marginalrevolution/2026/05/wednesday-assorted-links-553.html?utm_source=rss&utm_medium=rss&utm_campaign=wednesday-assorted-links-553" target="_blank">
+          <span class="headline-title">Wednesday assorted links</span>
+          <span class="headline-source">MR</span>
+        </a></li>
+      </ul>
+      <div class="headlines-footer">via FRED, Brookings, MR, Economist, VoxEU</div>
+    </div>
+
+    <div class="panel panel--amber" data-widget-id="w-18-headlines" data-widget-type="headlines">
+      <div class="panel-header">
+        <div class="panel-icon">▤</div>
+        <div class="panel-title">Business Strategy</div>
+      </div>
+      <ul class="headlines-list">
+        <li><a href="https://stratechery.com/2026/the-deployment-company-back-to-the-70s-apple-and-intel/" target="_blank">
+          <span class="headline-title">The Deployment Company, Back to the 70s, Apple and Intel</span>
+          <span class="headline-source">Stratechery</span>
+        </a></li>
+        <li><a href="https://www.wired.com/story/instagrams-new-instants-app-is-a-snapchat-clone-for-thirst-traps/" target="_blank">
+          <span class="headline-title">Instagram’s New Instants App Is a Snapchat Clone for Thirst Traps</span>
+          <span class="headline-source">Wired</span>
+        </a></li>
+        <li><a href="https://www.fastcompany.com/91541832/the-trick-to-getting-7-elevens-1-slurpees-this-summer-is-knowing-the-schedule" target="_blank">
+          <span class="headline-title">The trick to getting 7-Eleven’s $1 Slurpees this summer is knowing the schedule</span>
+          <span class="headline-source">FastCo</span>
+        </a></li>
+        <li><a href="https://www.forbes.com/sites/maureenkerr/2026/05/13/snaps-q1-makes-its-ar-glasses-bet-harder-to-ignore/" target="_blank">
+          <span class="headline-title">Snap’s Q1 Makes Its AR Glasses Bet Harder To Ignore</span>
+          <span class="headline-source">Forbes</span>
+        </a></li>
+        <li><a href="https://stratechery.com/2026/spacex-and-anthropic-xais-two-companies-elon-musk-and-spacexais-future/" target="_blank">
+          <span class="headline-title">SpaceX and Anthropic, xAI’s Two Companies, Elon Musk and SpaceXAI’s Future</span>
+          <span class="headline-source">Stratechery</span>
+        </a></li>
+        <li><a href="https://www.wired.com/story/what-it-will-take-to-make-ai-sustainable/" target="_blank">
+          <span class="headline-title">What It Will Take to Make AI Sustainable</span>
+          <span class="headline-source">Wired</span>
+        </a></li>
+      </ul>
+      <div class="headlines-footer">via Stratechery, Wired, FastCo, Forbes</div>
+    </div>
+
+    <div class="panel--span-4" style="background:transparent;border:none;padding:16px 0 4px 0" data-widget-id="w-19-section" data-widget-type="section">
+      <div class="section-divider">
+        <span class="section-divider-title">Rabbit Holes</span>
+        <span class="section-divider-line"></span>
+        <span class="section-divider-sub">when you have time to explore</span>
+      </div>
+    </div>
+
+    <div class="panel panel--violet" data-widget-id="w-20-links" data-widget-type="links">
+      <div class="panel-header">
+        <div class="panel-icon">◈</div>
+        <div class="panel-title">Monthly</div>
+      </div>
+      <ul class="link-list">
+        <li><a href="https://a16z.com/blog" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>a16z Blog</span></a></li>
+        <li><a href="https://www.sequoiacap.com/articles" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>Sequoia Articles</span></a></li>
+        <li><a href="https://mckinsey.com/featured-insights" target="_blank"><span class="link-tag link-tag--biz">biz</span><span>McKinsey Insights</span></a></li>
+        <li><a href="https://www.stateof.ai" target="_blank"><span class="link-tag link-tag--ai">ai</span><span>State of AI Report</span></a></li>
+        <li><a href="https://arxiv.org/list/cs.AI/recent" target="_blank"><span class="link-tag link-tag--ai">ai</span><span>Arxiv - Recent AI</span></a></li>
+        <li><a href="https://transformer-circuits.pub" target="_blank"><span class="link-tag link-tag--ai">ai</span><span>Transformer Circuits</span></a></li>
+        <li><a href="https://producthunt.com" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>Product Hunt</span></a></li>
+        <li><a href="https://github.com/trending" target="_blank"><span class="link-tag link-tag--dev">dev</span><span>GitHub Trending</span></a></li>
+        <li><a href="https://theresanaiforthat.com" target="_blank"><span class="link-tag link-tag--ai">ai</span><span>There's An AI For That</span></a></li>
+        <li><a href="https://news.ycombinator.com/show" target="_blank"><span class="link-tag link-tag--tech">tech</span><span>Hacker News - Show HN</span></a></li>
+        <li><a href="https://www.bcg.com/henderson-institute" target="_blank"><span class="link-tag link-tag--biz">biz</span><span>BCG Henderson Institute</span></a></li>
+        <li><a href="https://www.bain.com/insights" target="_blank"><span class="link-tag link-tag--biz">biz</span><span>Bain Insights</span></a></li>
+        <li><a href="https://www.ycombinator.com/blog" target="_blank"><span class="link-tag link-tag--biz">biz</span><span>Y Combinator Blog</span></a></li>
+        <li><a href="https://www.bridgewater.com/research-and-insights" target="_blank"><span class="link-tag link-tag--finance">finance</span><span>Investor Letters (Macro)</span></a></li>
+        <li><a href="https://www.cbinsights.com/research" target="_blank"><span class="link-tag link-tag--biz">biz</span><span>CBInsights</span></a></li>
+      </ul>
+    </div>
+
+    <div class="panel panel--blue" data-widget-id="w-21-text" data-widget-type="text">
+      <div class="panel-header">
+        <div class="panel-icon">W</div>
+        <div class="panel-title">Wikipedia Featured</div>
+      </div>
+      <div class="text-body">Splatoon 3: Side Order is a 2024 downloadable content (DLC) expansion pack for the single-player mode of Splatoon 3, a 2022 third-person shooter video game by Nintendo for the Nintendo Switch. Anno...</div>
+      <div class="text-attribution">— <a href="https://en.wikipedia.org/wiki/Splatoon_3%3A_Side_Order">Splatoon 3: Side Order</a></div>
+      <div class="text-source">via wikipedia</div>
+    </div>
+
+    <div class="panel panel--cyan" data-widget-id="w-22-headlines" data-widget-type="headlines">
+      <div class="panel-header">
+        <div class="panel-icon">▤</div>
+        <div class="panel-title">Science</div>
+      </div>
+      <ul class="headlines-list">
+        <li><a href="https://www.quantamagazine.org/how-the-bird-eye-was-pushed-to-an-evolutionary-extreme-20260513/" target="_blank">
+          <span class="headline-title">How the Bird Eye Was Pushed to an Evolutionary Extreme</span>
+          <span class="headline-source">Quanta</span>
+        </a></li>
+        <li><a href="https://www.newscientist.com/article/2526440-neanderthals-treated-a-dental-cavity-by-drilling-into-the-tooth/?utm_campaign=RSS%7CNSNS&utm_source=NSNS&utm_medium=RSS&utm_content=home" target="_blank">
+          <span class="headline-title">Neanderthals treated a dental cavity by drilling into the tooth</span>
+          <span class="headline-source">NewSci</span>
+        </a></li>
+        <li><a href="https://www.quantamagazine.org/how-unknowable-math-can-help-hide-secrets-20260511/" target="_blank">
+          <span class="headline-title">How Unknowable Math Can Help Hide Secrets</span>
+          <span class="headline-source">Quanta</span>
+        </a></li>
+        <li><a href="https://www.newscientist.com/article/2526362-arctic-fires-are-releasing-carbon-stored-for-thousands-of-years/?utm_campaign=RSS%7CNSNS&utm_source=NSNS&utm_medium=RSS&utm_content=home" target="_blank">
+          <span class="headline-title">Arctic fires are releasing carbon stored for thousands of years</span>
+          <span class="headline-source">NewSci</span>
+        </a></li>
+        <li><a href="https://www.quantamagazine.org/will-we-ever-be-able-to-forecast-volcanic-eruptions-like-weather-20260508/" target="_blank">
+          <span class="headline-title">Will We Ever Be Able To Forecast Volcanic Eruptions Like Weather?</span>
+          <span class="headline-source">Quanta</span>
+        </a></li>
+      </ul>
+      <div class="headlines-footer">via Nature, Science, Quanta, NewSci</div>
+    </div>
+
+    <div class="panel panel--blue" data-widget-id="w-23-headlines" data-widget-type="headlines">
+      <div class="panel-header">
+        <div class="panel-icon">▤</div>
+        <div class="panel-title">Papers & Ideas</div>
+      </div>
+      <ul class="headlines-list">
+        <li><a href="https://aisafety.dance/" target="_blank">
+          <span class="headline-title">AI Safety for Fleshy Humans: a whirlwind tour</span>
+          <span class="headline-source">Ncase</span>
+        </a></li>
+        <li><a href="https://www.lesswrong.com/posts/GufBJNg62gkpbnE4Q/mats-autumn-2026-fellowship-applications-now-open-apply-by" target="_blank">
+          <span class="headline-title">MATS Autumn 2026 Fellowship Applications Now Open—Apply by June 7</span>
+          <span class="headline-source">LessWrong</span>
+        </a></li>
+        <li><a href="https://distill.pub/2021/understanding-gnns" target="_blank">
+          <span class="headline-title">Understanding Convolutions on Graphs</span>
+          <span class="headline-source">Distill</span>
+        </a></li>
+        <li><a href="https://arxiv.org/abs/2605.08200" target="_blank">
+          <span class="headline-title">Where Reliability Lives in Vision-Language Models: A Mechanistic Study of Attention, Hidden States, and Causal Circuits</span>
+          <span class="headline-source">arXiv AI</span>
+        </a></li>
+        <li><a href="https://ncase.me/covid-19/" target="_blank">
+          <span class="headline-title">New project! Nutshell: make expandable explanations</span>
+          <span class="headline-source">Ncase</span>
+        </a></li>
+      </ul>
+      <div class="headlines-footer">via Ncase, LessWrong, Distill, arXiv AI</div>
+    </div>
+
+    <div class="panel--span-4" style="background:transparent;border:none;padding:16px 0 4px 0" data-widget-id="w-24-section" data-widget-type="section">
+      <div class="section-divider">
+        <span class="section-divider-title">Closing Thought</span>
+        <span class="section-divider-line"></span>
+        <span class="section-divider-sub">carry something with you</span>
+      </div>
+    </div>
+
+    <div class="panel panel--rose panel--span-2" data-widget-id="w-25-text" data-widget-type="text">
+      <div class="panel-header">
+        <div class="panel-icon">¶</div>
+        <div class="panel-title">Poem</div>
+      </div>
+      <div class="text-body">When a people reach the top of a hill,
+Then does God lean toward them,
+Shortens tongues and lengthens arms.
+A vision of their dead comes to the weak.
+The moon shall not be too old
+Before the new battalions rise,
+Blue battalions.
+The moon shall not be too old
+...</div>
+      <div class="text-attribution">— Stephen Crane — &quot;When a people reach the top of a hill,&quot;</div>
+      <div class="text-source">via poetrydb.org</div>
+    </div>
+
+    <div class="panel panel--green panel--span-2" data-widget-id="w-26-image" data-widget-type="image">
+      <div class="panel-header">
+        <div class="panel-icon">◻</div>
+        <div class="panel-title">Wikimedia - Photo</div>
+      </div>
+      <div class="image-widget">
+        <a href="https://commons.wikimedia.org/wiki/File:Azulejo_-_Igreja_de_S%C3%A3o_Bento_-_Ribeira_Brava.jpg" target="_blank"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Azulejo_-_Igreja_de_S%C3%A3o_Bento_-_Ribeira_Brava.jpg/960px-Azulejo_-_Igreja_de_S%C3%A3o_Bento_-_Ribeira_Brava.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail" alt="Azulejo - Igreja de São Bento - Ribeira Brava" loading="lazy"></a>
+      </div>
+      <div class="image-caption">
+        <div class="image-caption-title">Azulejo - Igreja de São Bento - Ribeira Brava</div>
+        <div class="image-caption-desc">This azulejo from the Igreja de São Bento (Ribeira Brava, Madeira, Portugal) depicts Our Lady of Fátima. Today is the fe</div>
+      </div>
+      <div class="image-source">via Wikimedia Commons</div>
+    </div>
+
+  </div>
+
+  <!-- Status Bar -->
+  <footer class="statusbar">
+    <div class="status-item">
+      <div class="status-dot"></div>
+      <span>system local</span>
+    </div>
+    <div class="status-item">
+      <span id="status-uptime"></span>
+    </div>
+    <div class="status-item">
+      <span id="status-storage"></span>
+    </div>
+    <div style="margin-left: auto" class="status-item">
+      <span>frontdoor v1.0</span>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+window.FRONTDOOR_SHORTCUTS = {"ws": "https://wsj.com", "ny": "https://nytimes.com", "wp": "https://washingtonpost.com", "cg": "https://chat.openai.com", "cl": "https://claude.ai", "gn": "https://gemini.google.com", "px": "https://perplexity.ai", "gm": "https://mail.google.com", "gc": "https://calendar.google.com", "gd": "https://drive.google.com", "gh": "https://github.com", "nt": "https://notion.so", "sl": "https://app.slack.com", "yt": "https://youtube.com", "rd": "https://reddit.com", "hn": "https://news.ycombinator.com"};
+</script>
+<script>
+/**
+ * Frontdoor Engine — runtime code injected into built HTML.
+ * Handles: clock, search with shortcuts, status bar, storage abstraction.
+ * Widget-specific JS is appended separately by the build system.
+ */
+(function () {
+  "use strict";
+
+  // ── Storage abstraction (localStorage now, chrome.storage later) ──
+  window.FrontdoorStorage = {
+    get: function (key, fallback) {
+      try {
+        var val = localStorage.getItem("frontdoor-" + key);
+        return val !== null ? JSON.parse(val) : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    },
+    set: function (key, value) {
+      try {
+        localStorage.setItem("frontdoor-" + key, JSON.stringify(value));
+      } catch (e) {
+        // silent
+      }
+    },
+    getRaw: function (key, fallback) {
+      try {
+        var val = localStorage.getItem("frontdoor-" + key);
+        return val !== null ? val : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    },
+    setRaw: function (key, value) {
+      try {
+        localStorage.setItem("frontdoor-" + key, value);
+      } catch (e) {
+        // silent
+      }
+    },
+  };
+
+  // ── Clock ──
+  function updateClock() {
+    var now = new Date();
+    var h = String(now.getHours()).padStart(2, "0");
+    var m = String(now.getMinutes()).padStart(2, "0");
+    var s = String(now.getSeconds()).padStart(2, "0");
+    document.getElementById("clock").textContent = h + ":" + m + ":" + s;
+
+    var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    var months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    document.getElementById("clock-date").textContent =
+      days[now.getDay()] +
+      " " +
+      now.getDate() +
+      " " +
+      months[now.getMonth()] +
+      " " +
+      now.getFullYear();
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // ── Search ──
+  // FRONTDOOR_SHORTCUTS is injected by the build system as a global
+  var searchInput = document.getElementById("search");
+
+  searchInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      var q = searchInput.value.trim();
+      if (!q) return;
+      if (
+        window.FRONTDOOR_SHORTCUTS &&
+        window.FRONTDOOR_SHORTCUTS[q.toLowerCase()]
+      ) {
+        window.location.href = window.FRONTDOOR_SHORTCUTS[q.toLowerCase()];
+      } else if (/^https?:\/\//.test(q) || /^[\w-]+\.\w+/.test(q)) {
+        window.location.href = q.startsWith("http") ? q : "https://" + q;
+      } else {
+        window.location.href =
+          "https://www.google.com/search?q=" + encodeURIComponent(q);
+      }
+    }
+  });
+
+  // Focus search on / or Escape
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (e.key === "/" || e.key === "Escape") {
+      e.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    }
+  });
+
+  // ── Status bar ──
+  var bootTime = Date.now();
+  function updateStatus() {
+    var upMin = Math.floor((Date.now() - bootTime) / 60000);
+    var el = document.getElementById("status-uptime");
+    if (el) el.textContent = "session " + upMin + "m";
+
+    if (navigator.storage && navigator.storage.estimate) {
+      navigator.storage.estimate().then(function (est) {
+        var usedMB = (est.usage / 1048576).toFixed(1);
+        var storageEl = document.getElementById("status-storage");
+        if (storageEl) storageEl.textContent = "storage " + usedMB + "mb";
+      });
+    }
+  }
+  updateStatus();
+  setInterval(updateStatus, 60000);
+})();
+
+</script>
+<script>
+
+</script>
+
+</body>
+</html>

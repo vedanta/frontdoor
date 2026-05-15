@@ -8,6 +8,12 @@ Structure: a **Foundation** phase that blocks everything, then **three tracks** 
 largely in parallel (Data, Presentation, Accounts & API), then **Integration** and
 **Launch**.
 
+> **Visual target.** [`design/reference/index.html`](../design/reference/index.html) is
+> the original Python build's actual rendered output — a self-contained HTML file with
+> the theme inlined, every section, and every panel class. Open it in a browser; it is
+> the visual fidelity bar the rewrite is aiming for. Items #4 and #11–#15 implementers
+> should keep it open as they work; item #27 diffs against it as the launch criterion.
+
 ---
 
 ## Dependency overview
@@ -106,7 +112,10 @@ graph LR
 ### 4. Theme port + layout shell
 - **Deliverable:** `theme.css` ported, `next/font` self-hosting IBM Plex (no
   render-blocking `@import`), the base page chrome (background gradients, dot-grid
-  texture, container, CSS variables).
+  texture, container, CSS variables). **Match the rendered output of
+  [`design/reference/index.html`](../design/reference/index.html)** — same CSS class
+  names (`panel`, `panel--{color}`, `panel--span-{n}`, `section-divider*`) so the
+  rewrite's markup can adopt the original theme rules nearly verbatim.
 - **Depends on:** 1
 - **Parallel with:** 2, 3
 
@@ -276,7 +285,8 @@ graph LR
   → `?key=` → cookie → `/d/{slug}` dashboard) plus the "enter your key" fallback and
   slug-mismatch reject; resilience checks scripted (dead feed, KV miss); plus a manual
   `design/02` anti-goals visual pass (no spinners, no layout shift, near-zero client
-  JS — the eyeball-only bits).
+  JS) **side-by-side with [`design/reference/index.html`](../design/reference/index.html)**
+  — that's the visual fidelity bar.
 - **Depends on:** 23, 25, 26, 29
 - **Parallel with:** —
 

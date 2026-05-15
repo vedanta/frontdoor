@@ -18,6 +18,7 @@ reference once these docs exist.
 | `05-config-schema.md` | The per-user dashboard config (JSON), replacing the YAML files |
 | `06-architecture.md` | Next.js / Vercel / API-key / cron architecture and effort |
 | `theme.css` | The dark theme — drops in nearly as-is |
+| `reference/index.html` | The original Python build's actual rendered output — the **visual fidelity reference** the rewrite should match. Self-contained HTML, theme inlined, all 6 sections, every panel class (`panel--{color}`, `panel--span-{n}`). Open in a browser to see what "done" looks like. |
 
 ## The concept in one paragraph
 
