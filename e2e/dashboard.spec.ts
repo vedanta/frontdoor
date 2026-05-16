@@ -65,6 +65,15 @@ test('status bar renders with font controls', async ({ page }) => {
   await expect(page.getByLabel('bigger font')).toBeVisible();
 });
 
+test('clicking the clock toggles 24h ↔ 12h format', async ({ page }) => {
+  const clock = page.locator('.clock');
+  await expect(clock).toHaveText(/^\d{2}:\d{2}:\d{2}$/); // 24h
+  await clock.click();
+  await expect(clock).toHaveText(/^\d{2}:\d{2}:\d{2} [ap]$/); // 12h with a/p
+  await clock.click();
+  await expect(clock).toHaveText(/^\d{2}:\d{2}:\d{2}$/); // back to 24h
+});
+
 test('A+ increases the computed font-size of body content', async ({ page }) => {
   // Sample a real content selector — .text-body is in every text widget
   const textBody = page.locator('.text-body').first();

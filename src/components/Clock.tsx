@@ -1,10 +1,16 @@
 'use client';
 
 /**
- * Ticking clock — one of only two client components in MVP.
- * Renders an empty placeholder during SSR and the first client render (so
- * server/client agree → no hydration mismatch), then fills in on the next
- * microtask via setTimeout(0) and updates every 1s.
+ * Ticking clock — one of two MVP client components.
+ *
+ * Renders an empty placeholder during SSR + initial client (no hydration
+ * mismatch), then fills in on the next macrotask via setTimeout(0). Updates
+ * every 1s.
+ *
+ * Click-to-toggle (#43): clicking the clock cycles 24h ↔ 12h format. Choice
+ * persists in localStorage under `frontdoor.clockFormat`. The clock is a
+ * `<button>` so it's keyboard-accessible (Space/Enter); CSS resets the button
+ * chrome so it visually matches the original `<div>` design.
  *
  * Per design/02-aesthetic-and-rendering.md → "the only animation is the clock
  * ticking."
@@ -16,31 +22,88 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-export function formatNow(now: Date = new Date()): { time: string; date: string } {
+export type ClockFormat = '24h' | '12h';
+const STORAGE_KEY = 'frontdoor.clockFormat';
+const DEFAULT_FORMAT: ClockFormat = '24h';
+
+function readStoredFormat(): ClockFormat {
+  if (typeof window === 'undefined') return DEFAULT_FORMAT;
+  try {
+    const v = window.localStorage.getItem(STORAGE_KEY);
+    return v === '12h' || v === '24h' ? v : DEFAULT_FORMAT;
+  } catch {
+    return DEFAULT_FORMAT;
+  }
+}
+
+export function formatNow(
+  now: Date = new Date(),
+  format: ClockFormat = DEFAULT_FORMAT,
+): { time: string; date: string } {
+  const h24 = now.getHours();
+  const m = pad(now.getMinutes());
+  const s = pad(now.getSeconds());
+
+  let time: string;
+  if (format === '12h') {
+    // 1..12 (0→12, 13→1, etc.); 'a'/'p' suffix per design's dense/calm aesthetic
+    const h12 = ((h24 + 11) % 12) + 1;
+    const period = h24 < 12 ? 'a' : 'p';
+    time = `${pad(h12)}:${m}:${s} ${period}`;
+  } else {
+    time = `${pad(h24)}:${m}:${s}`;
+  }
+
   return {
-    time: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+    time,
     date: `${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`,
   };
 }
 
 export function Clock() {
   const [view, setView] = useState<{ time: string; date: string } | null>(null);
+  const [format, setFormat] = useState<ClockFormat>(DEFAULT_FORMAT);
 
+  // Hydrate format from localStorage — defer via setTimeout(0) so setState lands
+  // in a callback, not the effect body (Next 16 lint rule).
   useEffect(() => {
-    // Defer the initial set to the next macrotask — keeps the setState out of
-    // the effect body itself (the React/Next lint rule discourages synchronous
-    // setState in effects) while still filling the clock in immediately.
-    const initial = setTimeout(() => setView(formatNow()), 0);
-    const tick = setInterval(() => setView(formatNow()), 1000);
+    const t = setTimeout(() => setFormat(readStoredFormat()), 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Initial fill + 1s tick. Re-runs when format changes so a click-toggle
+  // updates the display immediately (rather than waiting for the next second).
+  useEffect(() => {
+    const update = () => setView(formatNow(new Date(), format));
+    const initial = setTimeout(update, 0);
+    const tick = setInterval(update, 1000);
     return () => {
       clearTimeout(initial);
       clearInterval(tick);
     };
-  }, []);
+  }, [format]);
+
+  const toggleFormat = () => {
+    const next: ClockFormat = format === '24h' ? '12h' : '24h';
+    setFormat(next);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      /* localStorage may be disabled; setState alone is enough for the session */
+    }
+  };
 
   return (
     <>
-      <div className="clock">{view?.time ?? ' '}</div>
+      <button
+        type="button"
+        className="clock"
+        onClick={toggleFormat}
+        aria-label={`switch to ${format === '24h' ? '12-hour' : '24-hour'} clock`}
+        title="click to switch 12h / 24h"
+      >
+        {view?.time ?? ' '}
+      </button>
       <div className="clock-date">{view?.date ?? ' '}</div>
     </>
   );
