@@ -1,28 +1,40 @@
 /**
- * Root route — placeholder for the scaffold.
- *
- * The real entry point in MVP is /d/[slug] (per-user ISR page; see #23).
- * For unauthenticated visitors, the "enter your key" page lives here (see #20).
+ * Root route — placeholder using the ported theme classes so the panel system
+ * is visibly correct before any widgets land. Real MVP entry is /d/[slug] (#23);
+ * the "enter your key" page also lives here (#20). Both replace this.
  */
 export default function Home() {
   return (
-    <main
-      style={{
-        display: 'flex',
-        minHeight: '100vh',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '2rem',
-        fontFamily: 'system-ui, sans-serif',
-        color: '#d0dce8',
-        background: '#0a0e17',
-      }}
-    >
-      <h1 style={{ fontWeight: 300, letterSpacing: '0.05em', fontSize: '1.5rem' }}>frontdoor</h1>
-      <p style={{ marginTop: '1rem', color: '#56687d', fontSize: '0.875rem' }}>
-        scaffold ready · awaiting widgets
-      </p>
-    </main>
+    <>
+      <div className="grid-dots" />
+      <div className="shell">
+        <header className="header">
+          <div className="header-left">
+            <span className="logo">
+              frontdoor
+              <span className="logo-dot" />
+            </span>
+            <span className="tagline">scaffold</span>
+          </div>
+          <div>
+            <div className="clock">00:00</div>
+            <div className="clock-date">awaiting widgets</div>
+          </div>
+        </header>
+        <div className="grid">
+          <div className="panel panel--cyan panel--span-4">
+            <div className="panel-header">
+              <div className="panel-icon">✦</div>
+              <div className="panel-title">scaffold</div>
+            </div>
+            <h1 style={{ fontWeight: 400, fontSize: '14px', marginBottom: '4px' }}>frontdoor</h1>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              theme ported · awaiting widgets · the real dashboard renders at{' '}
+              <code style={{ fontFamily: 'var(--font-plex-mono)' }}>/d/[slug]</code> (#23)
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
