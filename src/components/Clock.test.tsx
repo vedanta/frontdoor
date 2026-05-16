@@ -1,9 +1,36 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render } from '@testing-library/react';
 import { Clock, formatNow } from './Clock';
+
+const STORAGE_KEY = 'frontdoor.clockFormat';
+
+// jsdom in this env doesn't auto-provide window.localStorage; stub it.
+beforeAll(() => {
+  const store = new Map<string, string>();
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+      clear: () => {
+        store.clear();
+      },
+      key: (i: number) => Array.from(store.keys())[i] ?? null,
+      get length() {
+        return store.size;
+      },
+    },
+  });
+});
 
 beforeEach(() => {
   vi.useFakeTimers();
+  window.localStorage.clear();
 });
 
 afterEach(() => {
@@ -11,16 +38,44 @@ afterEach(() => {
 });
 
 describe('formatNow (pure)', () => {
-  it('formats time as HH:MM:SS and date as "Day D Mon YYYY"', () => {
-    const d = new Date(2026, 4, 15, 14, 32, 9); // 2026-05-15 14:32:09 local
-    const v = formatNow(d);
-    expect(v.time).toBe('14:32:09');
-    expect(v.date).toMatch(/^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) 15 May 2026$/);
+  it('24h: HH:MM:SS', () => {
+    const d = new Date(2026, 4, 15, 14, 32, 9);
+    expect(formatNow(d, '24h').time).toBe('14:32:09');
   });
 
-  it('zero-pads single digits', () => {
+  it('24h: zero-pads single digits', () => {
     const d = new Date(2026, 0, 1, 1, 2, 3);
-    expect(formatNow(d).time).toBe('01:02:03');
+    expect(formatNow(d, '24h').time).toBe('01:02:03');
+  });
+
+  it('12h: 14:32 (afternoon) renders as 02:32:09 (no am/pm suffix — minimalism)', () => {
+    const d = new Date(2026, 4, 15, 14, 32, 9);
+    expect(formatNow(d, '12h').time).toBe('02:32:09');
+  });
+
+  it('12h: midnight renders as 12:00:00 (same as noon — known ambiguity)', () => {
+    const d = new Date(2026, 4, 15, 0, 0, 0);
+    expect(formatNow(d, '12h').time).toBe('12:00:00');
+  });
+
+  it('12h: noon renders as 12:00:00 (same as midnight — known ambiguity)', () => {
+    const d = new Date(2026, 4, 15, 12, 0, 0);
+    expect(formatNow(d, '12h').time).toBe('12:00:00');
+  });
+
+  it('12h: 1pm renders as 01:00:00', () => {
+    const d = new Date(2026, 4, 15, 13, 0, 0);
+    expect(formatNow(d, '12h').time).toBe('01:00:00');
+  });
+
+  it('date format unchanged across formats', () => {
+    const d = new Date(2026, 4, 15, 12, 0, 0);
+    expect(formatNow(d, '12h').date).toBe(formatNow(d, '24h').date);
+  });
+
+  it('defaults to 24h when no format given', () => {
+    const d = new Date(2026, 4, 15, 14, 32, 9);
+    expect(formatNow(d).time).toBe('14:32:09');
   });
 });
 
@@ -28,30 +83,80 @@ describe('Clock (component)', () => {
   it('starts empty (no hydration mismatch), fills in on the next tick', () => {
     const { container } = render(<Clock />);
     expect(container.querySelector('.clock')?.textContent?.trim()).toBe('');
-    expect(container.querySelector('.clock-date')?.textContent?.trim()).toBe('');
 
-    // setTimeout(0) fires the initial fill
     act(() => {
       vi.advanceTimersByTime(1);
     });
     expect(container.querySelector('.clock')?.textContent ?? '').toMatch(/^\d{2}:\d{2}:\d{2}$/);
-    expect(container.querySelector('.clock-date')?.textContent ?? '').not.toBe('');
   });
 
-  it('updates the time every second', () => {
+  it('clicking the clock toggles 24h → 12h → 24h, persists in localStorage', () => {
+    // Pin a time in the afternoon so the digit difference is visible
+    vi.setSystemTime(new Date(2026, 4, 15, 14, 32, 9));
+
     const { container } = render(<Clock />);
     act(() => {
-      vi.advanceTimersByTime(1); // initial fill
+      vi.advanceTimersByTime(5);
     });
-    const t1 = container.querySelector('.clock')?.textContent;
+    expect(container.querySelector('.clock')?.textContent ?? '').toBe('14:32:09'); // 24h
 
-    // Advance system time by 5s, then advance timer to fire the next tick
+    // First click → 12h: 14:32:09 → 02:32:09 (no a/p suffix per #43 minimalism)
     act(() => {
-      vi.setSystemTime(new Date(Date.now() + 5000));
-      vi.advanceTimersByTime(1000);
+      fireEvent.click(container.querySelector('.clock')!);
     });
-    const t2 = container.querySelector('.clock')?.textContent;
+    act(() => {
+      vi.advanceTimersByTime(5);
+    });
+    expect(container.querySelector('.clock')?.textContent ?? '').toBe('02:32:09');
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('12h');
 
-    expect(t2).not.toBe(t1);
+    // Second click → back to 24h
+    act(() => {
+      fireEvent.click(container.querySelector('.clock')!);
+    });
+    act(() => {
+      vi.advanceTimersByTime(5);
+    });
+    expect(container.querySelector('.clock')?.textContent ?? '').toBe('14:32:09');
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('24h');
+  });
+
+  it('hydrates from localStorage on mount', () => {
+    // Pin afternoon so 12h is visibly different from 24h
+    vi.setSystemTime(new Date(2026, 4, 15, 14, 32, 9));
+    window.localStorage.setItem(STORAGE_KEY, '12h');
+
+    const { container } = render(<Clock />);
+    act(() => {
+      vi.advanceTimersByTime(5);
+    });
+    act(() => {
+      vi.advanceTimersByTime(5);
+    });
+    expect(container.querySelector('.clock')?.textContent ?? '').toBe('02:32:09');
+  });
+
+  it('ignores corrupt localStorage value (falls back to 24h)', () => {
+    window.localStorage.setItem(STORAGE_KEY, 'banana');
+    const { container } = render(<Clock />);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(container.querySelector('.clock')?.textContent ?? '').toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  });
+
+  it('aria-label and title reflect the next action', () => {
+    const { container } = render(<Clock />);
+    act(() => {
+      vi.advanceTimersByTime(5);
+    });
+    const button = container.querySelector('.clock')!;
+    // Default 24h → label says "switch to 12-hour"
+    expect(button.getAttribute('aria-label')).toBe('switch to 12-hour clock');
+
+    act(() => {
+      fireEvent.click(button);
+    });
+    expect(button.getAttribute('aria-label')).toBe('switch to 24-hour clock');
   });
 });

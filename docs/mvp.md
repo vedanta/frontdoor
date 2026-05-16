@@ -41,7 +41,8 @@ explicitly deferred. Architecture for all of this lives in
 - `section` — full-width divider (rendered from the section object)
 
 ### 5. Interactive (the entire client bundle)
-- `<Clock/>` — ticking clock
+- `<Clock/>` — ticking clock; **click to toggle 12h / 24h format** (#43),
+  persisted in localStorage
 - `<SearchBar/>` — query search + keyboard-shortcut routing
 - Shortcut map built at render time from `links`/`launcher` `key` fields (dedupe +
   collision warning)

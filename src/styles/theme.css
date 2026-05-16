@@ -158,11 +158,21 @@ body::after {
 }
 
 .clock {
+  /* button reset — .clock is a <button> (click to toggle 12h/24h, #43) */
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  /* design styles */
   font-family: var(--font-plex-mono), monospace;
   font-size: 28px;
   font-weight: 300;
   color: var(--text-primary);
   letter-spacing: 2px;
+  transition: color 0.15s ease;
+}
+.clock:hover {
+  color: var(--accent-cyan);
 }
 
 .clock-date {

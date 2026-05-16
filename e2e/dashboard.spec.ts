@@ -65,6 +65,18 @@ test('status bar renders with font controls', async ({ page }) => {
   await expect(page.getByLabel('bigger font')).toBeVisible();
 });
 
+test('clicking the clock toggles 24h ↔ 12h (aria-label flips)', async ({ page }) => {
+  // Both formats render as HH:MM:SS now (no a/p suffix per #43 minimalism), so we
+  // assert on aria-label which reliably reflects the current mode.
+  const clock = page.locator('.clock');
+  await expect(clock).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
+  await expect(clock).toHaveAttribute('aria-label', /12-hour/);
+  await clock.click();
+  await expect(clock).toHaveAttribute('aria-label', /24-hour/);
+  await clock.click();
+  await expect(clock).toHaveAttribute('aria-label', /12-hour/);
+});
+
 test('A+ increases the computed font-size of body content', async ({ page }) => {
   // Sample a real content selector — .text-body is in every text widget
   const textBody = page.locator('.text-body').first();
