@@ -1,0 +1,58 @@
+type: links
+title: Monthly
+color: violet
+icon: "◈"
+span: 1
+
+links:
+  # Industry reports
+  - name: a16z Blog
+    url: https://a16z.com/blog
+    tag: tech
+  - name: Sequoia Articles
+    url: https://www.sequoiacap.com/articles
+    tag: tech
+  - name: McKinsey Insights
+    url: https://mckinsey.com/featured-insights
+    tag: biz
+  - name: State of AI Report
+    url: https://www.stateof.ai
+    tag: ai
+
+  # Learning
+  - name: Arxiv - Recent AI
+    url: https://arxiv.org/list/cs.AI/recent
+    tag: ai
+  - name: Transformer Circuits
+    url: https://transformer-circuits.pub
+    tag: ai
+  # Tools / Discovery
+  - name: Product Hunt
+    url: https://producthunt.com
+    tag: tech
+  - name: GitHub Trending
+    url: https://github.com/trending
+    tag: dev
+  - name: There's An AI For That
+    url: https://theresanaiforthat.com
+    tag: ai
+  - name: Hacker News - Show HN
+    url: https://news.ycombinator.com/show
+    tag: tech
+
+  # Strategy & Finance
+  - name: BCG Henderson Institute
+    url: https://www.bcg.com/henderson-institute
+    tag: biz
+  - name: Bain Insights
+    url: https://www.bain.com/insights
+    tag: biz
+  - name: Y Combinator Blog
+    url: https://www.ycombinator.com/blog
+    tag: biz
+  - name: Investor Letters (Macro)
+    url: https://www.bridgewater.com/research-and-insights
+    tag: finance
+  - name: CBInsights
+    url: https://www.cbinsights.com/research
+    tag: biz

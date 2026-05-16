@@ -1,0 +1,47 @@
+type: links
+title: Morning
+color: amber
+icon: "◑"
+span: 1
+
+links:
+  # Headlines
+  - name: Reuters
+    url: https://reuters.com
+    tag: news
+  - name: Wall Street Journal
+    url: https://wsj.com
+    key: ws
+    tag: news
+  - name: New York Times
+    url: https://nytimes.com
+    key: ny
+    tag: news
+  - name: Washington Post
+    url: https://washingtonpost.com
+    key: wp
+    tag: news
+
+  # Digests
+  - name: Morning Brew
+    url: https://www.morningbrew.com/daily
+    tag: news
+  - name: TLDR Newsletter
+    url: https://tldr.tech
+    tag: tech
+  - name: The Rundown AI
+    url: https://www.therundown.ai
+    tag: ai
+
+  # Strategy
+  - name: HBR Daily
+    url: https://hbr.org/the-daily
+    tag: biz
+
+  # Markets
+  - name: Finviz
+    url: https://finviz.com/map.ashx
+    tag: finance
+  - name: Bloomberg
+    url: https://bloomberg.com
+    tag: finance

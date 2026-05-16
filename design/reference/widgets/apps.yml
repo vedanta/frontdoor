@@ -1,0 +1,103 @@
+type: launcher
+title: Apps
+color: cyan
+icon: "⊞"
+span: 4
+columns: 12
+
+apps:
+  # AI
+  - name: ChatGPT
+    url: https://chat.openai.com
+    key: cg
+  - name: Claude
+    url: https://claude.ai
+    key: cl
+  - name: Gemini
+    url: https://gemini.google.com
+    key: gn
+  - name: Perplexity
+    url: https://perplexity.ai
+    key: px
+  - name: Midjourney
+    url: https://midjourney.com
+  - name: Hugging Face
+    url: https://huggingface.co
+
+  # Google
+  - name: Gmail
+    url: https://mail.google.com
+    key: gm
+  - name: Calendar
+    url: https://calendar.google.com
+    key: gc
+  - name: Drive
+    url: https://drive.google.com
+    key: gd
+  - name: Docs
+    url: https://docs.google.com
+  - name: Sheets
+    url: https://sheets.google.com
+  - name: Photos
+    url: https://photos.google.com
+
+  # Dev
+  - name: GitHub
+    url: https://github.com
+    key: gh
+  - name: VS Code
+    url: https://vscode.dev
+  - name: Notion
+    url: https://notion.so
+    key: nt
+  - name: Stack Overflow
+    url: https://stackoverflow.com
+  - name: Figma
+    url: https://figma.com
+  - name: Vercel
+    url: https://vercel.com
+
+  # Comms
+  - name: Slack
+    url: https://app.slack.com
+    key: sl
+  - name: Discord
+    url: https://discord.com/app
+  - name: WhatsApp
+    url: https://web.whatsapp.com
+  - name: Zoom
+    url: https://zoom.us
+  - name: Teams
+    url: https://teams.microsoft.com
+  - name: Telegram
+    url: https://web.telegram.org
+
+  # Media
+  - name: YouTube
+    url: https://youtube.com
+    key: yt
+  - name: Spotify
+    url: https://open.spotify.com
+  - name: Twitter / X
+    url: https://x.com
+  - name: Reddit
+    url: https://reddit.com
+    key: rd
+  - name: Netflix
+    url: https://netflix.com
+  - name: Twitch
+    url: https://twitch.tv
+
+  # Utilities
+  - name: LinkedIn
+    url: https://linkedin.com
+  - name: Maps
+    url: https://maps.google.com
+  - name: Translate
+    url: https://translate.google.com
+  - name: Amazon
+    url: https://amazon.com
+  - name: Dropbox
+    url: https://dropbox.com
+  - name: 1Password
+    url: https://my.1password.com

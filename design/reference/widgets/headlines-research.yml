@@ -1,0 +1,16 @@
+type: headlines
+title: Papers & Ideas
+color: blue
+icon: "▤"
+span: 1
+count: 5
+
+feeds:
+  - url: https://ncase.me/feed.xml
+    name: Ncase
+  - url: https://www.lesswrong.com/feed.xml
+    name: LessWrong
+  - url: https://distill.pub/rss.xml
+    name: Distill
+  - url: https://arxiv.org/rss/cs.AI
+    name: arXiv AI

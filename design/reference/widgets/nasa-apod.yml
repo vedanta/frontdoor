@@ -1,0 +1,6 @@
+type: image
+title: NASA - Picture of the Day
+color: blue
+icon: "✦"
+span: 2
+source: nasa-apod
