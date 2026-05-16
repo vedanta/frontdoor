@@ -8,11 +8,30 @@
       name="description"
       content="frontdoor is a dense, calm browser start page. Widgets arranged by the psychology of how you consume information at the start of a session, not by widget type."
     />
+
+    <!-- favicon -->
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
     <meta property="og:title" content="frontdoor" />
     <meta
       property="og:description"
+      content="A browser start page that respects your attention. Dense. Calm. One screen. No dopamine loops."
+    />
+    <meta property="og:image" content="./og-image.svg" />
+    <meta property="og:url" content="https://vedanta.github.io/frontdoor/" />
+    <meta property="og:site_name" content="frontdoor" />
+
+    <!-- Twitter card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="frontdoor" />
+    <meta
+      name="twitter:description"
       content="A browser start page that respects your attention. Dense. Calm. One screen."
     />
+    <meta name="twitter:image" content="./og-image.svg" />
+
     <meta name="theme-color" content="#0a0e17" />
     <link rel="stylesheet" href="./style.css" />
   </head>
@@ -21,10 +40,38 @@
 
     <main class="shell">
       <header class="hero">
-        <div class="logo">frontdoor<span class="logo-dot" aria-hidden="true"></span></div>
+        <div class="logo">
+          frontdoor<span class="logo-dot" aria-hidden="true"></span>
+        </div>
         <h1>A browser start page that respects your attention.</h1>
         <p class="tagline">Dense. Calm. One screen. No dopamine loops.</p>
+        <p class="status">
+          <span class="status-dot" aria-hidden="true"></span>
+          status: in development · launching soon
+        </p>
       </header>
+
+      <section class="why">
+        <div class="section-divider">
+          <span class="section-divider-title">Why</span>
+          <span class="section-divider-line" aria-hidden="true"></span>
+        </div>
+        <p>
+          Most browser start pages are either a search box and nothing else, or a
+          dump of widgets organized by type — all your bookmarks here, all your
+          news there. Neither serves attention. The first does too little; the
+          second invites you to scroll a homepage feed.
+        </p>
+        <p>
+          frontdoor is organized by a different rule: the
+          <strong
+            >psychology of how a person consumes information at the start of a
+            session.</strong
+          >
+          The page is a short arc you read top to bottom. You arrive. You act. You
+          get a small reward. You read. You discover. You depart.
+        </p>
+      </section>
 
       <section class="arc">
         <div class="section-divider">
@@ -32,13 +79,6 @@
           <span class="section-divider-line" aria-hidden="true"></span>
           <span class="section-divider-sub">how a page reads top to bottom</span>
         </div>
-        <p class="arc-lede">
-          frontdoor is not organized by widget type. It is organized by the
-          <strong
-            >psychology of how a person consumes information at the start of a session.</strong
-          >
-          You arrive, you act, you get a small reward, you read, you discover, you depart.
-        </p>
         <ol class="arc-list">
           <li>
             <span class="arc-num">01</span>
@@ -48,9 +88,7 @@
           <li>
             <span class="arc-num">02</span>
             <span class="arc-name">Act</span>
-            <span class="arc-desc"
-              >tools &amp; time-sensitive briefings — news, weather, your apps</span
-            >
+            <span class="arc-desc">tools &amp; time-sensitive briefings — news, weather, your apps</span>
           </li>
           <li>
             <span class="arc-num">03</span>
@@ -65,9 +103,7 @@
           <li>
             <span class="arc-num">05</span>
             <span class="arc-name">Discover</span>
-            <span class="arc-desc"
-              >the rabbit hole — Wikipedia featured, science &amp; research</span
-            >
+            <span class="arc-desc">the rabbit hole — Wikipedia featured, science &amp; research</span>
           </li>
           <li>
             <span class="arc-num">06</span>
@@ -87,22 +123,22 @@
           <li>
             <h3>No spinners</h3>
             <p>
-              Every external API is fetched server-side and cached daily. A page load is a cache
-              hit. No loading states on the hot path.
+              Every external API is fetched server-side and cached daily. A page
+              load is a cache hit. No loading states on the hot path.
             </p>
           </li>
           <li>
             <h3>No motion</h3>
             <p>
-              The only animation is the clock ticking. No carousels, no autoplay, no notification
-              badges, no red.
+              The only animation is the clock ticking. No carousels, no autoplay,
+              no notification badges, no red.
             </p>
           </li>
           <li>
             <h3>No feed</h3>
             <p>
-              There is nothing to scroll. The page is the page. You read it once at the start of the
-              day, not refresh it compulsively.
+              There is nothing to scroll. The page is the page. You read it once
+              at the start of the day, not refresh it compulsively.
             </p>
           </li>
         </ul>
@@ -112,18 +148,27 @@
         <div class="section-divider">
           <span class="section-divider-title">See it</span>
           <span class="section-divider-line" aria-hidden="true"></span>
+          <span class="section-divider-sub">the visual fidelity reference</span>
         </div>
         <p class="see-lede">
-          The visual fidelity reference — what a finished page looks like, rendered from the
-          original build:
+          A finished page, rendered from the original build. Click into the iframe
+          to interact, or open it full-screen:
         </p>
+        <div class="preview">
+          <iframe
+            src="https://raw.githack.com/vedanta/frontdoor/main/design/index.html"
+            title="frontdoor — visual reference"
+            loading="lazy"
+            referrerpolicy="no-referrer"
+          ></iframe>
+        </div>
         <p class="see-link">
           <a
-            href="https://raw.githack.com/vedanta/frontdoor/main/design/reference/index.html"
+            href="https://raw.githack.com/vedanta/frontdoor/main/design/index.html"
             target="_blank"
             rel="noopener noreferrer"
           >
-            design/reference/index.html →
+            open in a new tab →
           </a>
         </p>
       </section>
@@ -133,14 +178,14 @@
           <span class="section-divider-title">Try it</span>
           <span class="section-divider-line" aria-hidden="true"></span>
         </div>
-        <p>Sign up by emailing yourself a key:</p>
+        <p>Sign up by emailing yourself a key (live once the app deploys):</p>
         <pre class="code"><code>curl -X POST https://frontdoor.app/api/keys \
   -H 'content-type: application/json' \
   -d '{"email":"you@example.com"}'</code></pre>
         <p class="try-note">
-          You'll receive a one-time link. Click it — your browser opens to your start page, signed
-          in via an <code>httpOnly</code> cookie. No accounts to manage, no passwords, no recovery
-          flow.
+          You'll receive a one-time link. Click it — your browser opens to your
+          start page, signed in via an <code>httpOnly</code> cookie. No accounts
+          to manage, no passwords, no recovery flow.
         </p>
       </section>
 
