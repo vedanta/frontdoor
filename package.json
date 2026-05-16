@@ -15,7 +15,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "migrate:default-config": "tsx scripts/migrate-default-config.ts"
+    "migrate:default-config": "tsx scripts/migrate-default-config.ts",
+    "seed:test-user": "tsx scripts/seed-test-user.ts"
   },
   "dependencies": {
     "@upstash/ratelimit": "^2.0.8",
