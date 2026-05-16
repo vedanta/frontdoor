@@ -18,6 +18,8 @@ import {
   ImageWidget,
   TextWidget,
 } from '@/components/widgets';
+import { Clock } from '@/components/Clock';
+import { SearchBar, buildShortcuts } from '@/components/search';
 
 function firstWidgetOfType<T extends string>(type: T) {
   for (const section of DEFAULT_CONFIG.sections) {
@@ -36,6 +38,7 @@ export default function Home() {
   const headlinesCfg = firstWidgetOfType('headlines')!;
   const weatherCfg = firstWidgetOfType('weather')!;
   const imageCfg = firstWidgetOfType('image')!;
+  const shortcuts = buildShortcuts(DEFAULT_CONFIG);
 
   return (
     <>
@@ -51,7 +54,12 @@ export default function Home() {
               widgets demo · all 7 types · /d/[slug] is the real entry
             </span>
           </div>
+          <div>
+            <Clock />
+          </div>
         </header>
+
+        <SearchBar shortcuts={shortcuts} />
 
         <div className="grid">
           {/* section divider */}
