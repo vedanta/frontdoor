@@ -52,3 +52,4 @@ CLAUDE.local.md
 
 # === Unclassified — origin TBD, monitoring ===
 .cache/
+.env*.local
