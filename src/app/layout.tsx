@@ -39,7 +39,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${plexMono.variable}`}>
+    // suppressHydrationWarning on <html>: the no-flash bootstrap script below
+    // intentionally mutates documentElement.style.--page-font-size BEFORE
+    // React hydrates, so server/client markup diverges by design. Standard
+    // React pattern for pre-hydration DOM tweaks (themes, locale, etc.).
+    <html
+      lang="en"
+      className={`${plexSans.variable} ${plexMono.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: FONT_SIZE_BOOTSTRAP }} />
       </head>
