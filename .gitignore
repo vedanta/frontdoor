@@ -42,7 +42,11 @@ yarn-error.log*
 .idea/
 
 # === Claude Code ===
-.claude/
+# Ignore everything under .claude/ EXCEPT skills/ — those are project code, not local state.
+# (Plain `.claude/` would un-includably blanket-ignore the whole tree; using `.claude/*`
+# lets the negation rule below re-include a specific subdirectory.)
+.claude/*
+!.claude/skills/
 CLAUDE.md
 CLAUDE.local.md
 
