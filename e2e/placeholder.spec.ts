@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * Sanity E2E for the public landing page. The widget demo moved to /d/[slug]
+ * Sanity E2E for the public landing page. The widget demo moved to /fd/[slug]
  * behind the auth middleware (#20); / is now the "enter your key" page.
- * The full signup → cookie → /d/{slug} → widgets path is the #27 suite.
+ * The full signup → cookie → /fd/{slug} → widgets path is the #27 suite.
  */
 test('root route renders the enter-your-key landing', async ({ page }) => {
   await page.goto('/');

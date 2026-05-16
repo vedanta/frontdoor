@@ -108,6 +108,6 @@ describe('PUT /api/config', () => {
     expect(await res.json()).toEqual({ ok: true });
 
     expect(kvStore.get(configKey('u_1'))).toEqual(DEFAULT_CONFIG);
-    expect(revalidatePath).toHaveBeenCalledWith('/d/a1b2c3d4');
+    expect(revalidatePath).toHaveBeenCalledWith('/fd/a1b2c3d4');
   });
 });

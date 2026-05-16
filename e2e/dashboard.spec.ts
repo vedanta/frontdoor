@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * Dashboard render E2E — /d/{slug} with the seeded user.
+ * Dashboard render E2E — /fd/{slug} with the seeded user.
  *
  * First visit cold-fetches every data-driven widget's upstream — slow but
  * not flaky (each fetcher has its own resilience ladder). Subsequent visits
@@ -24,7 +24,7 @@ test.setTimeout(90_000); // first cold render can fan out many upstream fetches
 test.beforeEach(async ({ page }) => {
   // Bootstrap auth via ?key= once per test (cookie persists for that test's context)
   await page.goto(`/?key=${SEED_KEY}`);
-  await page.waitForURL(`**/d/${SEED_SLUG}`);
+  await page.waitForURL(`**/fd/${SEED_SLUG}`);
 });
 
 test('all 6 section dividers render', async ({ page }) => {
@@ -45,7 +45,7 @@ test('at least one panel widget renders per section', async ({ page }) => {
 
 test('header renders the logo + tagline with the slug', async ({ page }) => {
   await expect(page.locator('.logo').first()).toContainText('frontdoor');
-  await expect(page.getByText(`/d/${SEED_SLUG}`)).toBeVisible();
+  await expect(page.getByText(`/fd/${SEED_SLUG}`)).toBeVisible();
 });
 
 test('clock and search bar are present', async ({ page }) => {

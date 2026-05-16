@@ -19,13 +19,13 @@ explicitly deferred. Architecture for all of this lives in
 
 ### 2. Auth & session
 - Bootstrap from `?key=` on first visit → validate against KV
-- Issue signed `httpOnly` cookie (carries `userId`+`slug`), redirect to `/d/{slug}`
+- Issue signed `httpOnly` cookie (carries `userId`+`slug`), redirect to `/fd/{slug}`
 - Middleware: verify cookie signature, check cookie-slug matches path-slug (no KV
   round-trip on the hot path)
 - "Enter your key" fallback page for missing / invalid / mismatched cookie
 
 ### 3. The dashboard page (web)
-- Per-user ISR route `/d/[slug]`, server-rendered, statically cached
+- Per-user ISR route `/fd/[slug]`, server-rendered, statically cached
 - The fixed 6-section arc: Arrive → Act → Reward → Read → Discover → Depart
 - Section dividers (title + subtitle + hairline)
 - 4-column responsive grid (collapse at 1100px / 600px), widget `span` 1–4
@@ -76,7 +76,7 @@ explicitly deferred. Architecture for all of this lives in
 - Default config — one-time migration from the original YAML dashboard; ships with a
   fallback weather location (NYC `40.71, -74.01`)
 - `GET` / `PUT /api/config` — **curl-able, no editing UI**; `PUT` is Zod-validated and
-  triggers revalidation of the user's `/d/{slug}` page
+  triggers revalidation of the user's `/fd/{slug}` page
 
 ### 9. Theme & aesthetic
 - Port `theme.css` (dark, IBM Plex, panel system, dot-grid texture)

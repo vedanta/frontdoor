@@ -1,5 +1,5 @@
 /**
- * ISR revalidation helpers — call `revalidatePath('/d/{slug}')` for one or
+ * ISR revalidation helpers — call `revalidatePath('/fd/{slug}')` for one or
  * all users. Used by:
  *   - /api/refresh: after warming the global cache, revalidate every user
  *   - /api/revalidate: standalone endpoint (cron or admin can hit directly)
@@ -17,11 +17,11 @@ export type RevalidateSummary = {
   failed: string[]; // userIds whose user record was missing/corrupt
 };
 
-/** Revalidate one user's `/d/{slug}` page. Returns true if the slug was found. */
+/** Revalidate one user's `/fd/{slug}` page. Returns true if the slug was found. */
 export async function revalidateOneUser(userId: string): Promise<boolean> {
   const user = await getRedis().get<UserRecord>(userKey(userId));
   if (!user?.slug) return false;
-  revalidatePath(`/d/${user.slug}`);
+  revalidatePath(`/fd/${user.slug}`);
   return true;
 }
 

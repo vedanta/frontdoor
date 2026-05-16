@@ -15,7 +15,7 @@
  *
  * NOT a production code path. Lives under scripts/, never imported by
  * src/app/* or middleware. Lets you `curl /?key=<that key>` (or visit
- * http://localhost:3000/?key=…) and immediately land at /d/{slug}.
+ * http://localhost:3000/?key=…) and immediately land at /fd/{slug}.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

@@ -172,7 +172,7 @@ describe('DashboardPage', () => {
     const dividers = container.querySelectorAll('.section-divider-title');
     expect(dividers.length).toBe(6);
     // The slug shows in the tagline
-    expect(container.textContent).toContain('/d/devdev01');
+    expect(container.textContent).toContain('/fd/devdev01');
     // Stoic body — proves data fetching reached one widget
     expect(container.textContent).toContain('stoic body');
   });

@@ -40,7 +40,7 @@ describe('revalidateOneUser', () => {
       createdAt: 't',
     });
     expect(await revalidateOneUser('u_1')).toBe(true);
-    expect(revalidateCalls).toEqual(['/d/abc12345']);
+    expect(revalidateCalls).toEqual(['/fd/abc12345']);
   });
 
   it('returns false when user record is missing', async () => {
@@ -65,7 +65,7 @@ describe('revalidateAllUsers', () => {
 
     expect(summary.revalidated).toBe(3);
     expect(summary.failed).toEqual([]);
-    expect(revalidateCalls.sort()).toEqual(['/d/s1', '/d/s2', '/d/s3']);
+    expect(revalidateCalls.sort()).toEqual(['/fd/s1', '/fd/s2', '/fd/s3']);
   });
 
   it('records missing-record failures without stopping', async () => {
@@ -76,7 +76,7 @@ describe('revalidateAllUsers', () => {
 
     expect(summary.revalidated).toBe(1);
     expect(summary.failed).toEqual(['u_missing']);
-    expect(revalidateCalls).toEqual(['/d/s-ok']);
+    expect(revalidateCalls).toEqual(['/fd/s-ok']);
   });
 
   it('empty users set: no-op', async () => {

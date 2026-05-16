@@ -28,14 +28,14 @@ open in a second tab — that's the visual bar.
 - [ ] `curl -X POST https://<your-domain>/api/keys -H 'content-type: application/json' -d '{"email":"<your-real-email>"}'` → `202 { "status": "check your email" }`
 - [ ] Email arrives within ~30s, from the verified domain address
 - [ ] Email subject is "Your frontdoor key"; visible CTA "Open your dashboard"
-- [ ] Click the link → lands at `/d/{slug}` with the cookie set (no `?key=` in the URL — bootstrap stripped it)
+- [ ] Click the link → lands at `/fd/{slug}` with the cookie set (no `?key=` in the URL — bootstrap stripped it)
 - [ ] Reload the dashboard URL — still works without `?key=` (cookie persisted)
-- [ ] Visit `/?key=<your-key>` again from a new browser → re-issues cookie; lands at same `/d/{slug}`
+- [ ] Visit `/?key=<your-key>` again from a new browser → re-issues cookie; lands at same `/fd/{slug}`
 - [ ] Repeat signup with the same email → same key returned in the email (idempotent)
 
 ## 3. Dashboard fidelity (side-by-side with `design/reference/index.html`)
 
-Open the reference HTML in one tab and the live `/d/{slug}` in another.
+Open the reference HTML in one tab and the live `/fd/{slug}` in another.
 
 ### Structural
 - [ ] All 6 section dividers present, in order: **Arrive → Act → Reward → Read → Discover → Depart**
@@ -83,7 +83,7 @@ Open the reference HTML in one tab and the live `/d/{slug}` in another.
 - [ ] Vercel → Cron Jobs → most recent invocation succeeded (status 200)
 - [ ] Inspect the response body — `warmed`, `failed`, `revalidated` populated
 - [ ] `failed: []` (or only one or two flaky upstreams)
-- [ ] Visit `/d/{slug}` after cron — content updated to today's payload (NASA APOD, quote, etc.)
+- [ ] Visit `/fd/{slug}` after cron — content updated to today's payload (NASA APOD, quote, etc.)
 - [ ] PUT `/api/config` (via curl) for the test user → next visit shows the change ≤ a few seconds
 
 ## 6. Resilience (deliberate degradation)
@@ -97,9 +97,9 @@ These don't need to be reproduced precisely — knowing the failure modes degrad
 ## 7. Privacy / safety smoke
 
 - [ ] No API key appears in any HTTP response body, log line, or `Referer` header
-- [ ] `/?key=...` URL is stripped immediately on bootstrap (302); browser history shows the clean `/d/{slug}` afterward
+- [ ] `/?key=...` URL is stripped immediately on bootstrap (302); browser history shows the clean `/fd/{slug}` afterward
 - [ ] Session cookie is `httpOnly` + `Secure` (in prod) + `sameSite=lax`
-- [ ] Random `/d/<other-slug>` while authenticated → redirected to own slug (not 404, not allowed)
+- [ ] Random `/fd/<other-slug>` while authenticated → redirected to own slug (not 404, not allowed)
 
 ---
 
