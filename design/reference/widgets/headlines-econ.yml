@@ -1,0 +1,18 @@
+type: headlines
+title: Econ & Finance
+color: green
+icon: "▤"
+span: 1
+count: 6
+
+feeds:
+  - url: https://fredblog.stlouisfed.org/feed/
+    name: FRED
+  - url: https://www.brookings.edu/feed/
+    name: Brookings
+  - url: https://marginalrevolution.com/feed
+    name: MR
+  - url: https://www.economist.com/finance-and-economics/rss.xml
+    name: Economist
+  - url: https://voxeu.org/rss.xml
+    name: VoxEU

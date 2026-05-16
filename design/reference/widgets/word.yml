@@ -1,0 +1,6 @@
+type: text
+title: Word of the Day
+color: green
+icon: "Aa"
+span: 1
+source: word

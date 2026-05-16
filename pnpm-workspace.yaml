@@ -2,7 +2,9 @@
 # - sharp: Next.js image optimization (next/image)
 # - unrs-resolver: dependency resolution used by Next/ESLint internals
 # - msw: Mock Service Worker postinstall (sets up service-worker assets)
+# - esbuild: tsx's bundler (used by scripts/migrate-default-config.ts)
 allowBuilds:
   sharp: true
   unrs-resolver: true
   msw: true
+  esbuild: true

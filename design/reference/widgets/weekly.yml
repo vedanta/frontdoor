@@ -1,0 +1,40 @@
+type: links
+title: Weekly
+color: blue
+icon: "◳"
+span: 1
+
+links:
+  # Long reads
+  - name: The Economist
+    url: https://economist.com
+    tag: news
+  - name: The Atlantic
+    url: https://theatlantic.com
+    tag: news
+  - name: Harvard Business Review
+    url: https://hbr.org
+    tag: biz
+  - name: Wired
+    url: https://wired.com
+    tag: tech
+  - name: Scientific American
+    url: https://scientificamerican.com
+    tag: tech
+
+  # Newsletters & Blogs
+  - name: Stratechery
+    url: https://stratechery.com
+    tag: biz
+  - name: Simon Willison's Blog
+    url: https://simonwillison.net
+    tag: ai
+  - name: Benedict Evans
+    url: https://www.ben-evans.com
+    tag: tech
+  - name: Latent Space
+    url: https://www.latent.space
+    tag: ai
+  - name: Lenny's Newsletter
+    url: https://www.lennysnewsletter.com
+    tag: tech

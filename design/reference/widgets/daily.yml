@@ -1,0 +1,43 @@
+type: links
+title: Daily
+color: cyan
+icon: "◇"
+span: 1
+
+links:
+  # Tech reads
+  - name: Hacker News
+    url: https://news.ycombinator.com
+    key: hn
+    tag: tech
+  - name: Ars Technica
+    url: https://arstechnica.com
+    tag: tech
+
+  # AI
+  - name: Anthropic Blog
+    url: https://anthropic.com/blog
+    tag: ai
+  - name: OpenAI Blog
+    url: https://openai.com/blog
+    tag: ai
+  - name: The Batch (deeplearning.ai)
+    url: https://www.deeplearning.ai/the-batch/
+    tag: ai
+
+  # Finance & Business
+  - name: Financial Times
+    url: https://ft.com
+    tag: finance
+  - name: CNBC
+    url: https://cnbc.com
+    tag: finance
+  - name: Matt Levine (Bloomberg)
+    url: https://www.bloomberg.com/opinion/authors/ARbTQlRLRjE/matthew-s-levine
+    tag: finance
+  - name: Seeking Alpha
+    url: https://seekingalpha.com
+    tag: finance
+  - name: Business Insider
+    url: https://businessinsider.com
+    tag: biz

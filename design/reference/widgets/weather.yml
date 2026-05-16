@@ -1,0 +1,5 @@
+type: weather
+title: Weather
+color: blue
+icon: "◈"
+span: 1

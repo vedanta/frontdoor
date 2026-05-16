@@ -1,0 +1,47 @@
+title: frontdoor
+version: "1.0"
+
+theme: dark
+
+grid:
+  columns: 4
+
+widgets:
+  # ── Arrive: grounding, inspiration, temporal anchor ──
+  - file: section-arrive.yml
+  - file: stoic.yml
+  - file: quote.yml
+  - file: onthisday.yml
+  - file: word.yml
+
+  # ── Act: tools & time-sensitive briefings ──
+  - file: section-act.yml
+  - file: morning.yml
+  - file: weather.yml
+  - file: headlines.yml
+  - file: headlines-techai.yml
+  - file: apps.yml
+
+  # ── Visual Reward: beauty break after action ──
+  - file: section-reward.yml
+  - file: nasa-apod.yml
+  - file: bing-daily.yml
+
+  # ── Read: daily & weekly depth ──
+  - file: section-read.yml
+  - file: daily.yml
+  - file: weekly.yml
+  - file: headlines-econ.yml
+  - file: headlines-biz.yml
+
+  # ── Discover: monthly exploration & knowledge ──
+  - file: section-discover.yml
+  - file: monthly.yml
+  - file: wikipedia.yml
+  - file: headlines-science.yml
+  - file: headlines-research.yml
+
+  # ── Depart: leave with calm & beauty ──
+  - file: section-depart.yml
+  - file: poem.yml
+  - file: wikimedia-potd.yml

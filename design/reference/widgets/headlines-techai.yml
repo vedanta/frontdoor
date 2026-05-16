@@ -1,0 +1,20 @@
+type: headlines
+title: Tech & AI
+color: violet
+icon: "▤"
+span: 1
+count: 7
+
+feeds:
+  - url: https://feeds.arstechnica.com/arstechnica/index
+    name: Ars
+  - url: https://www.theverge.com/rss/index.xml
+    name: Verge
+  - url: https://techcrunch.com/feed/
+    name: TC
+  - url: https://blog.google/technology/ai/rss/
+    name: Google AI
+  - url: https://openai.com/blog/rss.xml
+    name: OpenAI
+  - url: https://huggingface.co/blog/feed.xml
+    name: HF

@@ -1,0 +1,16 @@
+type: headlines
+title: Business Strategy
+color: amber
+icon: "▤"
+span: 1
+count: 6
+
+feeds:
+  - url: https://stratechery.com/feed/
+    name: Stratechery
+  - url: https://www.wired.com/feed/rss
+    name: Wired
+  - url: https://www.fastcompany.com/rss
+    name: FastCo
+  - url: https://www.forbes.com/innovation/feed/
+    name: Forbes

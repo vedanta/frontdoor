@@ -1,0 +1,6 @@
+type: text
+title: Wikipedia Featured
+color: blue
+icon: "W"
+span: 1
+source: wikipedia
