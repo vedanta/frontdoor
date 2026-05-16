@@ -46,10 +46,11 @@ export function formatNow(
 
   let time: string;
   if (format === '12h') {
-    // 1..12 (0→12, 13→1, etc.); 'a'/'p' suffix per design's dense/calm aesthetic
+    // 1..12 (0→12, 13→1, etc.). No AM/PM suffix — kept off for minimalism;
+    // the user can tell morning from afternoon from context. Means midnight
+    // and noon both render as 12:00:00 (a known ambiguity).
     const h12 = ((h24 + 11) % 12) + 1;
-    const period = h24 < 12 ? 'a' : 'p';
-    time = `${pad(h12)}:${m}:${s} ${period}`;
+    time = `${pad(h12)}:${m}:${s}`;
   } else {
     time = `${pad(h24)}:${m}:${s}`;
   }

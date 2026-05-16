@@ -48,24 +48,24 @@ describe('formatNow (pure)', () => {
     expect(formatNow(d, '24h').time).toBe('01:02:03');
   });
 
-  it('12h: HH:MM:SS p for 14:32 (afternoon)', () => {
+  it('12h: 14:32 (afternoon) renders as 02:32:09 (no am/pm suffix — minimalism)', () => {
     const d = new Date(2026, 4, 15, 14, 32, 9);
-    expect(formatNow(d, '12h').time).toBe('02:32:09 p');
+    expect(formatNow(d, '12h').time).toBe('02:32:09');
   });
 
-  it('12h: handles midnight as 12:00:00 a', () => {
+  it('12h: midnight renders as 12:00:00 (same as noon — known ambiguity)', () => {
     const d = new Date(2026, 4, 15, 0, 0, 0);
-    expect(formatNow(d, '12h').time).toBe('12:00:00 a');
+    expect(formatNow(d, '12h').time).toBe('12:00:00');
   });
 
-  it('12h: handles noon as 12:00:00 p', () => {
+  it('12h: noon renders as 12:00:00 (same as midnight — known ambiguity)', () => {
     const d = new Date(2026, 4, 15, 12, 0, 0);
-    expect(formatNow(d, '12h').time).toBe('12:00:00 p');
+    expect(formatNow(d, '12h').time).toBe('12:00:00');
   });
 
-  it('12h: 1pm as 01:00:00 p', () => {
+  it('12h: 1pm renders as 01:00:00', () => {
     const d = new Date(2026, 4, 15, 13, 0, 0);
-    expect(formatNow(d, '12h').time).toBe('01:00:00 p');
+    expect(formatNow(d, '12h').time).toBe('01:00:00');
   });
 
   it('date format unchanged across formats', () => {
@@ -91,23 +91,23 @@ describe('Clock (component)', () => {
   });
 
   it('clicking the clock toggles 24h → 12h → 24h, persists in localStorage', () => {
+    // Pin a time in the afternoon so the digit difference is visible
+    vi.setSystemTime(new Date(2026, 4, 15, 14, 32, 9));
+
     const { container } = render(<Clock />);
-    // Drain both effects' setTimeout(0)s — hydrate-from-storage + initial fill
     act(() => {
       vi.advanceTimersByTime(5);
     });
-    expect(container.querySelector('.clock')?.textContent ?? '').toMatch(/^\d{2}:\d{2}:\d{2}$/); // 24h
+    expect(container.querySelector('.clock')?.textContent ?? '').toBe('14:32:09'); // 24h
 
-    // First click → 12h. Click commits state, then we drain the new effect's setTimeout(0).
+    // First click → 12h: 14:32:09 → 02:32:09 (no a/p suffix per #43 minimalism)
     act(() => {
       fireEvent.click(container.querySelector('.clock')!);
     });
     act(() => {
       vi.advanceTimersByTime(5);
     });
-    expect(container.querySelector('.clock')?.textContent ?? '').toMatch(
-      /^\d{2}:\d{2}:\d{2} [ap]$/,
-    );
+    expect(container.querySelector('.clock')?.textContent ?? '').toBe('02:32:09');
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('12h');
 
     // Second click → back to 24h
@@ -117,23 +117,23 @@ describe('Clock (component)', () => {
     act(() => {
       vi.advanceTimersByTime(5);
     });
-    expect(container.querySelector('.clock')?.textContent ?? '').toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    expect(container.querySelector('.clock')?.textContent ?? '').toBe('14:32:09');
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('24h');
   });
 
   it('hydrates from localStorage on mount', () => {
+    // Pin afternoon so 12h is visibly different from 24h
+    vi.setSystemTime(new Date(2026, 4, 15, 14, 32, 9));
     window.localStorage.setItem(STORAGE_KEY, '12h');
+
     const { container } = render(<Clock />);
-    // Drain both the hydrate effect and the post-hydrate tick-effect re-run
     act(() => {
       vi.advanceTimersByTime(5);
     });
     act(() => {
       vi.advanceTimersByTime(5);
     });
-    expect(container.querySelector('.clock')?.textContent ?? '').toMatch(
-      /^\d{2}:\d{2}:\d{2} [ap]$/,
-    );
+    expect(container.querySelector('.clock')?.textContent ?? '').toBe('02:32:09');
   });
 
   it('ignores corrupt localStorage value (falls back to 24h)', () => {
