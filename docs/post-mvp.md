@@ -37,17 +37,12 @@ otherwise design-complete — these three are the only gaps.
   post-MVP version.
 - **Depends on:** a small client flow + a config write-back path.
 
-### A3. Status bar / uptime indicator
-- **What:** A status bar showing uptime + lightweight system metrics (storage usage via
-  `navigator.storage.estimate`, etc.), mentioned as a possible third client component
-  alongside the clock and search bar.
-- **Specified in:** `design/02-aesthetic-and-rendering.md` ("Status bar uptime can also
-  be client, or dropped"); the original build *does* ship it — visible in
-  [`design/reference/index.html`](../design/reference/index.html).
-- **Why cut:** The MVP's client bundle is just `<Clock/>` + `<SearchBar/>`. The design
-  itself hedged here ("or dropped"), so this is the softest of the three cuts.
-- **Depends on:** nothing — purely a small client component if revived.
-- **Tracked in:** [#30](https://github.com/vedanta/frontdoor/issues/30)
+### ~~A3. Status bar / uptime indicator~~ — *moved into MVP*
+
+Originally cut. Pulled back into MVP scope because (a) the original Python build ships
+it (visible in `design/reference/index.html`), (b) it's a small client component, and
+(c) it's the natural home for the A−/A+ font-size controls (#51) which were also pulled
+in. Tracked as [#30](https://github.com/vedanta/frontdoor/issues/30).
 
 ---
 

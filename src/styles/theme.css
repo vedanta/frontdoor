@@ -11,6 +11,15 @@
  */
 
 :root {
+  /* User-adjustable via the StatusBar A−/A+ controls (#51). Set inline by
+     the layout's no-flash script before React boots; the controls update it
+     at runtime and persist to localStorage.
+     `--body-font-size` is the derived "content text" size that actually
+     responds to A−/A+. Chrome (mono labels, icons, attributions) keeps
+     its design sizes; only reading text scales. */
+  --page-font-size: 13px;
+  --body-font-size: var(--page-font-size, 13px);
+
   --bg-deep: #0a0e17;
   --bg-surface: #0f1520;
   --bg-card: #131a28;
@@ -45,7 +54,8 @@ body {
     var(--font-plex-sans),
     -apple-system,
     sans-serif;
-  font-size: 13px;
+  /* base size; A−/A+ in the status bar (#51) can step it through 11/13/15/17px */
+  font-size: var(--page-font-size, 13px);
   line-height: 1.6;
   overflow-x: hidden;
 }
@@ -361,4 +371,42 @@ body::after {
   .shell {
     padding: 16px;
   }
+}
+
+/* ── Status bar font controls (#51) ── */
+.status-fontsize {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.status-fontsize button {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 3px;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+.status-fontsize button:hover:not(:disabled) {
+  color: var(--accent-cyan);
+  background: var(--glow-cyan);
+}
+.status-fontsize button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.status-fontsize-current {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  min-width: 28px;
+  text-align: center;
+  opacity: 0.6;
 }

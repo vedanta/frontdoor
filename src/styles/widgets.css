@@ -36,13 +36,15 @@
 }
 
 .image-caption-title {
-  font-size: 11px;
+  /* scales with A−/A+ (#51) — caption is reading content */
+  font-size: calc(var(--body-font-size, 13px) - 2px);
   color: var(--text-primary);
   font-weight: 500;
 }
 
 .image-caption-desc {
-  font-size: 10px;
+  /* scales with A−/A+ — description is reading content */
+  font-size: calc(var(--body-font-size, 13px) - 3px);
   color: var(--text-dim);
   margin-top: 2px;
   line-height: 1.4;
@@ -137,7 +139,8 @@
 
 /* ── Widget: text ── */
 .text-body {
-  font-size: 12px;
+  /* scales with A−/A+ (#51) — the daily-text body IS the reading content */
+  font-size: calc(var(--body-font-size, 13px) - 1px);
   color: var(--text-primary);
   line-height: 1.7;
   white-space: pre-wrap;
@@ -196,7 +199,8 @@
 }
 
 .headline-title {
-  font-size: 12px;
+  /* scales with A−/A+ (#51) — headline text is reading content */
+  font-size: calc(var(--body-font-size, 13px) - 1px);
   color: var(--text-primary);
   flex: 1;
   display: -webkit-box;
@@ -336,7 +340,8 @@
   border-radius: 5px;
   color: var(--text-primary);
   text-decoration: none;
-  font-size: 12.5px;
+  /* scales with A−/A+ (#51) — link names are reading content */
+  font-size: calc(var(--body-font-size, 13px) - 0.5px);
   transition: all 0.2s ease;
 }
 

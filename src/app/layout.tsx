@@ -25,13 +25,32 @@ export const metadata: Metadata = {
   description: 'A browser start page that respects your attention.',
 };
 
+/**
+ * No-flash font-size script — runs before React boots, applies the user's
+ * stored --page-font-size from localStorage. Without this, the first paint is
+ * at the default 13px and snaps to e.g. 17px on hydrate. With it, the very
+ * first paint uses the chosen size. (#51 — StatusBar A−/A+ controls.)
+ */
+const FONT_SIZE_BOOTSTRAP = `(function(){try{var s=localStorage.getItem('frontdoor.fontSize');if(s&&['11','13','15','17'].indexOf(s)>=0)document.documentElement.style.setProperty('--page-font-size',s+'px')}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${plexMono.variable}`}>
+    // suppressHydrationWarning on <html>: the no-flash bootstrap script below
+    // intentionally mutates documentElement.style.--page-font-size BEFORE
+    // React hydrates, so server/client markup diverges by design. Standard
+    // React pattern for pre-hydration DOM tweaks (themes, locale, etc.).
+    <html
+      lang="en"
+      className={`${plexSans.variable} ${plexMono.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: FONT_SIZE_BOOTSTRAP }} />
+      </head>
       <body>{children}</body>
     </html>
   );

@@ -17,6 +17,7 @@ import { configKey, getRedis } from '@/lib/kv';
 import { getSessionFromCookie } from '@/lib/auth';
 import { DashboardConfigSchema, type DashboardConfig } from '@/lib/config';
 import { Clock } from '@/components/Clock';
+import { StatusBar } from '@/components/StatusBar';
 import { SearchBar, buildShortcuts } from '@/components/search';
 import { SectionDivider } from '@/components/widgets';
 import { renderWidget } from './render-widget';
@@ -82,6 +83,8 @@ export default async function DashboardPage({ params }: Props) {
             </Fragment>
           ))}
         </div>
+
+        <StatusBar />
       </div>
     </>
   );

@@ -58,3 +58,28 @@ test('grid uses the responsive layout class', async ({ page }) => {
   await expect(page.locator('.grid')).toBeVisible();
   await expect(page.locator('.grid-dots')).toBeAttached();
 });
+
+test('status bar renders with font controls', async ({ page }) => {
+  await expect(page.locator('.statusbar')).toBeVisible();
+  await expect(page.getByLabel('smaller font')).toBeVisible();
+  await expect(page.getByLabel('bigger font')).toBeVisible();
+});
+
+test('A+ increases the computed font-size of body content', async ({ page }) => {
+  // Sample a real content selector — .text-body is in every text widget
+  const textBody = page.locator('.text-body').first();
+  await expect(textBody).toBeVisible();
+
+  const beforePx = await textBody.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+
+  await page.getByLabel('bigger font').click();
+  // Tiny wait for the CSS variable update to propagate to layout
+  await page.waitForFunction((before) => {
+    const el = document.querySelector('.text-body');
+    if (!el) return false;
+    return parseFloat(getComputedStyle(el).fontSize) > before;
+  }, beforePx);
+
+  const afterPx = await textBody.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(afterPx).toBeGreaterThan(beforePx);
+});

@@ -10,6 +10,7 @@
  * The form is a plain GET → `/?key=…`. Middleware intercepts the bootstrap
  * and redirects to `/d/{slug}` with a signed cookie.
  */
+import { StatusBar } from '@/components/StatusBar';
 
 export default function Home() {
   return (
@@ -113,6 +114,8 @@ export default function Home() {
             </code>
           </div>
         </main>
+
+        <StatusBar />
       </div>
     </>
   );
