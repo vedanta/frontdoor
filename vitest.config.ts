@@ -11,7 +11,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'scripts/**/*.{test,spec}.{ts,tsx}'],
     // Exclude Playwright's e2e/ — that runs under a separate runner.
     exclude: ['**/node_modules/**', '**/.next/**', '**/e2e/**'],
     coverage: {
