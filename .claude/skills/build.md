@@ -89,6 +89,15 @@ If anything fails, **stop**. Surface the error. Ask for guidance — don't push 
 
 For issues touching anything visible at runtime, also run `pnpm test:e2e` if applicable.
 
+**Re-run `pnpm format` after *any* edit, no matter how small.** Every `Edit`/`Write`
+between verification and `git push` invalidates the previous check. PRs #50 and #56 both
+failed CI on `format:check` because a small follow-up edit (one paragraph reflow, one path
+correction) was made after step 7 and the format gate was skipped on the assumption that
+"the real work was already verified." Treat any modification — including ones that look
+like they couldn't possibly affect formatting (HTML attribute change, comment tweak,
+prettier-irrelevant file) — as resetting the gate. The cost is one shell command; the cost
+of skipping it is a red CI run and a follow-up commit. Same applies in step 10b.
+
 ### 8. Commit, push, open PR
 
 Commit message:
@@ -148,7 +157,8 @@ Stop. Wait for the user signal.
 ### 10b. On "changes: <description>"
 
 - Apply the changes on the same branch.
-- Re-run local verification (step 7).
+- Re-run local verification (step 7) — **including `pnpm format`**, even for a
+  one-character edit. See the note in step 7.
 - Push to the same branch (CI re-runs, PR updates).
 - Re-pause at step 9.
 
