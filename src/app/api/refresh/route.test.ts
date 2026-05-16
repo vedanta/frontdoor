@@ -3,24 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Mock all the data fetchers — return synthetic FetchResult.
 const happy = { ok: true as const, fresh: true, data: { _t: 'x' } as unknown };
 
+// `bingFails` lives inside a hoisted ref so the vi.mock factory captures the
+// same object as the test body (vi.mock is hoisted above plain `let`).
+const { bingFails } = vi.hoisted(() => ({ bingFails: { value: false } }));
+
 vi.mock('@/lib/data/sources/nasa-apod', () => ({ fetchNasaApod: async () => happy }));
-vi.mock('@/lib/data/sources/bing-daily', () => ({ fetchBingDaily: async () => happy }));
+vi.mock('@/lib/data/sources/bing-daily', () => ({
+  fetchBingDaily: async () =>
+    bingFails.value ? { ok: false, reason: 'http 503' } : happy,
+}));
 vi.mock('@/lib/data/sources/wikimedia-potd', () => ({ fetchWikimediaPotd: async () => happy }));
 vi.mock('@/lib/data/sources/quote', () => ({ fetchQuote: async () => happy }));
 vi.mock('@/lib/data/sources/poem', () => ({ fetchPoem: async () => happy }));
 vi.mock('@/lib/data/sources/onthisday', () => ({ fetchOnThisDay: async () => happy }));
 vi.mock('@/lib/data/sources/wikipedia', () => ({ fetchWikipediaFeatured: async () => happy }));
 vi.mock('@/lib/data/sources/word', () => ({ fetchWord: async () => happy }));
-
-// Make one of them fail to verify partial-fail surfaces in the summary.
-let bingFails = false;
-vi.mock('@/lib/data/sources/bing-daily', () => ({
-  fetchBingDaily: async () => (bingFails ? { ok: false, reason: 'http 503' } : happy),
-}));
-
-vi.mock('@/lib/data/sources/headlines', () => ({
-  fetchHeadlines: async () => happy,
-}));
+vi.mock('@/lib/data/sources/headlines', () => ({ fetchHeadlines: async () => happy }));
 
 // Stub revalidate helpers — assert they were called.
 const revalidateAllCalls: number[] = [];
@@ -40,7 +38,7 @@ const ORIG_SECRET = process.env.CRON_SECRET;
 
 beforeEach(() => {
   process.env.CRON_SECRET = 'test-cron-secret';
-  bingFails = false;
+  bingFails.value = false;
   revalidateAllCalls.length = 0;
 });
 
@@ -72,7 +70,7 @@ describe('POST /api/refresh', () => {
   });
 
   it('partial failure surfaces failed sources without crashing', async () => {
-    bingFails = true;
+    bingFails.value = true;
     const res = await POST(postReq());
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; failed: string[] };
