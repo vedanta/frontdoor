@@ -33,7 +33,7 @@ export const apiKeyKey = (apiKey: string): string => `key:${apiKey}`;
 /** `email:{email}` → `userId`. Signup idempotency + key recovery. Email is lowercased. */
 export const emailKey = (email: string): string => `email:${email.toLowerCase()}`;
 
-/** `slug:{slug}` → `userId`. Resolves a `/d/[slug]` route to its user. */
+/** `slug:{slug}` → `userId`. Resolves a `/fd/[slug]` route to its user. */
 export const slugKey = (slug: string): string => `slug:${slug}`;
 
 /** `user:{userId}` → `UserRecord` (JSON). */

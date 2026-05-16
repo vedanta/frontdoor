@@ -14,38 +14,38 @@ const SEED_SLUG = 'deadbeef';
 const hasKV = !!process.env.KV_REST_API_URL;
 test.skip(!hasKV, 'KV credentials not configured');
 
-test('?key= bootstraps a cookie and 302s to /d/{slug}', async ({ page }) => {
+test('?key= bootstraps a cookie and 302s to /fd/{slug}', async ({ page }) => {
   await page.goto(`/?key=${SEED_KEY}`);
-  await page.waitForURL(`**/d/${SEED_SLUG}`);
-  expect(page.url()).toMatch(new RegExp(`/d/${SEED_SLUG}$`));
+  await page.waitForURL(`**/fd/${SEED_SLUG}`);
+  expect(page.url()).toMatch(new RegExp(`/fd/${SEED_SLUG}$`));
 
   // Cookie is set
   const cookies = await page.context().cookies();
   expect(cookies.some((c) => c.name === 'frontdoor_session')).toBe(true);
 });
 
-test('cookie persists: visiting /d/{slug} again works without ?key=', async ({ page }) => {
+test('cookie persists: visiting /fd/{slug} again works without ?key=', async ({ page }) => {
   await page.goto(`/?key=${SEED_KEY}`);
-  await page.waitForURL(`**/d/${SEED_SLUG}`);
+  await page.waitForURL(`**/fd/${SEED_SLUG}`);
 
-  await page.goto(`/d/${SEED_SLUG}`);
-  expect(page.url()).toMatch(new RegExp(`/d/${SEED_SLUG}$`));
+  await page.goto(`/fd/${SEED_SLUG}`);
+  expect(page.url()).toMatch(new RegExp(`/fd/${SEED_SLUG}$`));
 });
 
 test("visiting another user's slug redirects to own slug", async ({ page }) => {
   await page.goto(`/?key=${SEED_KEY}`);
-  await page.waitForURL(`**/d/${SEED_SLUG}`);
+  await page.waitForURL(`**/fd/${SEED_SLUG}`);
 
-  await page.goto('/d/somebody-elses-slug');
-  await page.waitForURL(`**/d/${SEED_SLUG}`);
-  expect(page.url()).toMatch(new RegExp(`/d/${SEED_SLUG}$`));
+  await page.goto('/fd/somebody-elses-slug');
+  await page.waitForURL(`**/fd/${SEED_SLUG}`);
+  expect(page.url()).toMatch(new RegExp(`/fd/${SEED_SLUG}$`));
 });
 
-test('/d/{slug} without a cookie redirects to /', async ({ browser }) => {
+test('/fd/{slug} without a cookie redirects to /', async ({ browser }) => {
   // Fresh context = no cookies
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
-  await page.goto(`/d/${SEED_SLUG}`);
+  await page.goto(`/fd/${SEED_SLUG}`);
   await page.waitForURL('**/');
   expect(page.url()).toMatch(/\/$/);
   await ctx.close();

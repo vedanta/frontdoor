@@ -2,13 +2,13 @@
  * Landing / "enter your key" page.
  *
  * - Users with a valid cookie: middleware doesn't redirect them here
- *   (they'd be at /d/{slug} already). They only see this if they signed out
+ *   (they'd be at /fd/{slug} already). They only see this if they signed out
  *   or their cookie was invalidated.
  * - Users without a cookie: a tiny form to paste their key (or visit
  *   `/?key=…` directly from their email — middleware handles that on entry).
  *
  * The form is a plain GET → `/?key=…`. Middleware intercepts the bootstrap
- * and redirects to `/d/{slug}` with a signed cookie.
+ * and redirects to `/fd/{slug}` with a signed cookie.
  */
 import { StatusBar } from '@/components/StatusBar';
 

@@ -8,7 +8,7 @@
  *   1. Warm every global source via Promise.allSettled (one slow / failed
  *      source doesn't block the others; each fetcher already writes its KV
  *      entry on success via withResilience).
- *   2. Revalidate every user's `/d/{slug}` page so the next visit serves
+ *   2. Revalidate every user's `/fd/{slug}` page so the next visit serves
  *      the freshly-warmed cache.
  *
  * Headlines: only the DEFAULT_CONFIG's feed sets are warmed (most users

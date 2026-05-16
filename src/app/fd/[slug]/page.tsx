@@ -64,7 +64,7 @@ export default async function DashboardPage({ params }: Props) {
               {config.title || 'frontdoor'}
               <span className="logo-dot" />
             </span>
-            <span className="tagline">/d/{slug}</span>
+            <span className="tagline">/fd/{slug}</span>
           </div>
           <div>
             <Clock />

@@ -4,7 +4,7 @@
  *   GET:  → 200 { config: DashboardConfig }
  *   PUT:  body = DashboardConfig (Zod-validated)
  *         → 200 { ok: true }
- *         on success: revalidates the user's /d/{slug} ISR page
+ *         on success: revalidates the user's /fd/{slug} ISR page
  *
  * Auth: cookie (web editor) or Bearer (RN). Per-key rate-limited.
  *
@@ -67,7 +67,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   // Bust the caller's ISR page so the next visit re-renders with the new config.
   // (#25 makes this part of the broader cron flow; here we just hit the path.)
   try {
-    revalidatePath(`/d/${session.slug}`);
+    revalidatePath(`/fd/${session.slug}`);
   } catch {
     // revalidatePath throws if called outside a Next.js request context (i.e. in tests).
     // Production calls always have one; tests don't assert this path.

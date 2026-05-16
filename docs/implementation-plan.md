@@ -230,7 +230,7 @@ graph LR
 
 ### 20. Auth middleware + slug routing
 - **Deliverable:** `?key=` bootstrap → validate → signed `httpOnly` cookie → `302
-  /d/{slug}`; signature-verify on every load (no KV round-trip); cookie/path slug-match
+  /fd/{slug}`; signature-verify on every load (no KV round-trip); cookie/path slug-match
   check; the "enter your key" fallback page.
 - **Depends on:** 2
 - **Parallel with:** 18, 19, 21, 22
@@ -243,7 +243,7 @@ graph LR
 
 ### 22. Config endpoints `GET` / `PUT /api/config`
 - **Deliverable:** read/replace the caller's config; `PUT` is Zod-validated and triggers
-  `/api/revalidate` for the user's `/d/{slug}` page.
+  `/api/revalidate` for the user's `/fd/{slug}` page.
 - **Depends on:** 2, 3, 20
 - **Parallel with:** 18, 19, 21
 
@@ -251,7 +251,7 @@ graph LR
 
 ## Phase 2 — Integration
 
-### 23. Dashboard page `/d/[slug]` + ISR
+### 23. Dashboard page `/fd/[slug]` + ISR
 - **Deliverable:** the per-user route — assemble the fixed 6-section arc, the 4-column
   responsive grid (collapse at 1100px / 600px, `span` 1–4), wire every widget, configure
   ISR.
@@ -265,7 +265,7 @@ graph LR
 - **Parallel with:** 23
 
 ### 25. Cron: `/api/revalidate` + `vercel.json`
-- **Deliverable:** enumerate the `users` set → `revalidatePath('/d/{slug}')` each;
+- **Deliverable:** enumerate the `users` set → `revalidatePath('/fd/{slug}')` each;
   chained after `/api/refresh`; the daily `0 3 * * *` cron schedule in `vercel.json`.
 - **Depends on:** 23, 24
 - **Parallel with:** —
@@ -282,7 +282,7 @@ graph LR
 
 ### 27. End-to-end test suite (Playwright) + visual launch pass
 - **Deliverable:** a Playwright E2E suite covering the full happy path (signup → email
-  → `?key=` → cookie → `/d/{slug}` dashboard) plus the "enter your key" fallback and
+  → `?key=` → cookie → `/fd/{slug}` dashboard) plus the "enter your key" fallback and
   slug-mismatch reject; resilience checks scripted (dead feed, KV miss); plus a manual
   `design/02` anti-goals visual pass (no spinners, no layout shift, near-zero client
   JS) **side-by-side with [`design/reference/index.html`](../design/reference/index.html)**

@@ -1,7 +1,7 @@
 /**
  * POST /api/revalidate — standalone ISR revalidation endpoint.
  *
- *   - No body / no query: revalidate every user's `/d/{slug}`
+ *   - No body / no query: revalidate every user's `/fd/{slug}`
  *   - `?userId=<id>`: revalidate just that user
  *
  * Cron-protected with the same `CRON_SECRET` bearer as /api/refresh, so it's
