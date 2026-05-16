@@ -1,35 +1,28 @@
 /**
- * Per-user dashboard placeholder. Middleware (src/middleware.ts) guarantees
- * that the visitor reaches here only with a valid signed cookie whose slug
- * matches the path, so we don't re-check inside the component.
+ * Per-user dashboard — the real composition.
  *
- * Real widget composition with live fetched data is #23. This page renders
- * the same widget-demo content as the pre-auth placeholder did, just behind
- * the cookie gate.
+ *   1. Cookie is already verified + slug-matched by middleware (src/middleware.ts);
+ *      we just read `userId` from the session for the config lookup.
+ *   2. Load the user's `config:{userId}` from KV.
+ *   3. Render the 6 sections in order; for each widget, render its component
+ *      with awaited data (renderWidget dispatches to the right fetcher).
+ *      All widget data is fetched in parallel via Promise.all — the slowest
+ *      widget gates the page, not the sum of fetches.
+ *   4. ISR: page is cached and revalidated daily (#25 triggers on-demand
+ *      revalidation via the cron at 03:00 UTC, after /api/refresh warms KV).
  */
-import { DEFAULT_CONFIG } from '@/lib/config';
-import { fetchStoic } from '@/lib/data/sources/stoic';
-import {
-  HeadlinesWidget,
-  ImageWidget,
-  LauncherWidget,
-  LinksWidget,
-  SectionDivider,
-  TextWidget,
-  WeatherWidget,
-} from '@/components/widgets';
+import { notFound } from 'next/navigation';
+import { Fragment } from 'react';
+import { configKey, getRedis } from '@/lib/kv';
+import { getSessionFromCookie } from '@/lib/auth';
+import { DashboardConfigSchema, type DashboardConfig } from '@/lib/config';
 import { Clock } from '@/components/Clock';
 import { SearchBar, buildShortcuts } from '@/components/search';
-import { getSessionFromCookie } from '@/lib/auth';
+import { SectionDivider } from '@/components/widgets';
+import { renderWidget } from './render-widget';
 
-function firstWidgetOfType<T extends string>(type: T) {
-  for (const section of DEFAULT_CONFIG.sections) {
-    for (const w of section.widgets) {
-      if (w.type === type) return w;
-    }
-  }
-  return null;
-}
+// ISR — 24h fallback. /api/revalidate (cron + on-edit) overrides this.
+export const revalidate = 86400;
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -37,14 +30,28 @@ export default async function DashboardPage({ params }: Props) {
   const { slug } = await params;
   const session = await getSessionFromCookie();
 
-  const stoicCfg = firstWidgetOfType('text')!;
-  const stoicData = fetchStoic();
-  const linksCfg = firstWidgetOfType('links')!;
-  const launcherCfg = firstWidgetOfType('launcher')!;
-  const headlinesCfg = firstWidgetOfType('headlines')!;
-  const weatherCfg = firstWidgetOfType('weather')!;
-  const imageCfg = firstWidgetOfType('image')!;
-  const shortcuts = buildShortcuts(DEFAULT_CONFIG);
+  // Middleware already guarantees an authenticated cookie matching the slug,
+  // but defensive: if the session somehow isn't here, render not-found.
+  if (!session) return notFound();
+
+  const raw = await getRedis().get<DashboardConfig>(configKey(session.userId));
+  if (!raw) return notFound();
+
+  // Validate on read too — a config in KV that fails the schema means
+  // something went very wrong (data corruption); fail loud.
+  const parsed = DashboardConfigSchema.safeParse(raw);
+  if (!parsed.success) return notFound();
+  const config = parsed.data;
+
+  const shortcuts = buildShortcuts(config);
+
+  // Fan out: every widget's data fetch in parallel.
+  const renderedSections = await Promise.all(
+    config.sections.map(async (section) => ({
+      section,
+      widgets: await Promise.all(section.widgets.map((w) => renderWidget(w))),
+    })),
+  );
 
   return (
     <>
@@ -53,12 +60,10 @@ export default async function DashboardPage({ params }: Props) {
         <header className="header">
           <div className="header-left">
             <span className="logo">
-              frontdoor
+              {config.title || 'frontdoor'}
               <span className="logo-dot" />
             </span>
-            <span className="tagline">
-              /d/{slug} · auth ok · widgets demo · real composition in #23
-            </span>
+            <span className="tagline">/d/{slug}</span>
           </div>
           <div>
             <Clock />
@@ -68,69 +73,14 @@ export default async function DashboardPage({ params }: Props) {
         <SearchBar shortcuts={shortcuts} />
 
         <div className="grid">
-          <SectionDivider
-            id="arrive"
-            title="Welcome"
-            subtitle={`signed in as ${session?.userId.slice(0, 8) ?? '—'}`}
-          />
-
-          {stoicCfg.type === 'text' && stoicData.ok && (
-            <TextWidget widget={stoicCfg} data={stoicData.data} />
-          )}
-
-          {linksCfg.type === 'links' && <LinksWidget widget={linksCfg} />}
-
-          {imageCfg.type === 'image' && (
-            <ImageWidget
-              widget={{
-                type: 'image',
-                title: imageCfg.title,
-                color: imageCfg.color,
-                icon: imageCfg.icon,
-                span: 2,
-                source: 'static',
-                url: 'https://images.unsplash.com/photo-1532978879514-6f57086c8430?w=600',
-                caption: 'A still moment',
-                description:
-                  'Static placeholder. Real daily-image fetchers are wired; #23 calls them.',
-              }}
-            />
-          )}
-
-          {weatherCfg.type === 'weather' && (
-            <WeatherWidget
-              widget={weatherCfg}
-              data={{
-                current: { tempF: 68, feelsLikeF: 70, code: 2, humidity: 55, windMph: 9 },
-                today: {
-                  highF: 72,
-                  lowF: 55,
-                  sunrise: '2026-05-15T05:42',
-                  sunset: '2026-05-15T20:09',
-                  uvMax: 7,
-                  precipMaxPct: 10,
-                },
-                forecast: [
-                  { date: '2026-05-16', code: 3, highF: 75, lowF: 58 },
-                  { date: '2026-05-17', code: 61, highF: 65, lowF: 50 },
-                  { date: '2026-05-18', code: 0, highF: 70, lowF: 53 },
-                ],
-              }}
-            />
-          )}
-
-          {headlinesCfg.type === 'headlines' && (
-            <HeadlinesWidget
-              widget={headlinesCfg}
-              data={[
-                { title: 'Synthetic headline one', link: 'https://example.com/1', source: 'NYT' },
-                { title: 'Synthetic headline two', link: 'https://example.com/2', source: 'BBC' },
-                { title: 'Synthetic headline three', link: 'https://example.com/3', source: 'NPR' },
-              ]}
-            />
-          )}
-
-          {launcherCfg.type === 'launcher' && <LauncherWidget widget={launcherCfg} />}
+          {renderedSections.map(({ section, widgets }) => (
+            <Fragment key={section.id}>
+              <SectionDivider id={section.id} title={section.title} subtitle={section.subtitle} />
+              {widgets.map((w, i) => (
+                <Fragment key={`${section.id}-${i}`}>{w}</Fragment>
+              ))}
+            </Fragment>
+          ))}
         </div>
       </div>
     </>
