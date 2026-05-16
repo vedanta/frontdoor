@@ -19,9 +19,10 @@
 #
 set -euo pipefail
 
-# Stable production alias. Will become `https://frontdoor.barooah.io` (or
-# whatever lands) once the domain half of #26 is done; update this line then.
-DEFAULT_BASE_URL="https://frontdoor-theta.vercel.app"
+# Canonical production domain (#26 — Vercel front-door + rewrite to GH Pages).
+# The Vercel-assigned alias `https://frontdoor-theta.vercel.app` also still
+# works and serves the same content if you ever need to bypass DNS.
+DEFAULT_BASE_URL="https://frontdoor.barooah.io"
 LOCAL_BASE_URL="http://localhost:3000"
 
 BASE_URL="${FD_BASE_URL:-$DEFAULT_BASE_URL}"
@@ -43,12 +44,12 @@ Global options:
 
 Environment:
   FD_BASE_URL        Override the default base URL.
-                     Default: https://frontdoor-theta.vercel.app
+                     Default: https://frontdoor.barooah.io
 
 Examples:
   ./fd.sh signup you@example.com
   ./fd.sh --local signup you@example.com
-  FD_BASE_URL=https://staging.frontdoor.app ./fd.sh signup you@example.com
+  FD_BASE_URL=https://frontdoor-theta.vercel.app ./fd.sh signup you@example.com
 EOF
 }
 
