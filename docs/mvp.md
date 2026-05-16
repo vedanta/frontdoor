@@ -45,6 +45,10 @@ explicitly deferred. Architecture for all of this lives in
 - `<SearchBar/>` — query search + keyboard-shortcut routing
 - Shortcut map built at render time from `links`/`launcher` `key` fields (dedupe +
   collision warning)
+- `<StatusBar/>` — uptime + storage metric (#30); A−/A+ font-size controls (#51)
+  with localStorage persistence and a `--page-font-size` CSS variable. Added late
+  to MVP scope as the natural home for the font controls and to close a visible
+  gap vs. `design/reference/index.html`.
 
 ### 6. Data layer & sources
 - Server-side fetchers: RSS/Atom, NASA APOD, Bing daily, Wikimedia POTD, Wikipedia

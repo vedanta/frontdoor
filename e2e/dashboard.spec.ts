@@ -58,3 +58,9 @@ test('grid uses the responsive layout class', async ({ page }) => {
   await expect(page.locator('.grid')).toBeVisible();
   await expect(page.locator('.grid-dots')).toBeAttached();
 });
+
+test('status bar renders with font controls', async ({ page }) => {
+  await expect(page.locator('.statusbar')).toBeVisible();
+  await expect(page.getByLabel('smaller font')).toBeVisible();
+  await expect(page.getByLabel('bigger font')).toBeVisible();
+});
