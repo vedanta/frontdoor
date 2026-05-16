@@ -9,8 +9,7 @@ const { bingFails } = vi.hoisted(() => ({ bingFails: { value: false } }));
 
 vi.mock('@/lib/data/sources/nasa-apod', () => ({ fetchNasaApod: async () => happy }));
 vi.mock('@/lib/data/sources/bing-daily', () => ({
-  fetchBingDaily: async () =>
-    bingFails.value ? { ok: false, reason: 'http 503' } : happy,
+  fetchBingDaily: async () => (bingFails.value ? { ok: false, reason: 'http 503' } : happy),
 }));
 vi.mock('@/lib/data/sources/wikimedia-potd', () => ({ fetchWikimediaPotd: async () => happy }));
 vi.mock('@/lib/data/sources/quote', () => ({ fetchQuote: async () => happy }));
