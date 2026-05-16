@@ -79,8 +79,11 @@ export function StatusBar() {
 
   // Hydrate font size from localStorage (the inline script in layout.tsx already
   // applied the visual change; this just syncs React state for the controls).
+  // Defer to setTimeout(0) so setState lands in a callback, not the effect body
+  // (Next 16 lint rule — same pattern as <Clock/>'s initial fill).
   useEffect(() => {
-    setFontSize(readStoredFontSize());
+    const t = setTimeout(() => setFontSize(readStoredFontSize()), 0);
+    return () => clearTimeout(t);
   }, []);
 
   const idx = FONT_SIZES.indexOf(fontSize);

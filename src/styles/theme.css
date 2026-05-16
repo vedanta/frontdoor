@@ -13,8 +13,12 @@
 :root {
   /* User-adjustable via the StatusBar A−/A+ controls (#51). Set inline by
      the layout's no-flash script before React boots; the controls update it
-     at runtime and persist to localStorage. */
+     at runtime and persist to localStorage.
+     `--body-font-size` is the derived "content text" size that actually
+     responds to A−/A+. Chrome (mono labels, icons, attributions) keeps
+     its design sizes; only reading text scales. */
   --page-font-size: 13px;
+  --body-font-size: var(--page-font-size, 13px);
 
   --bg-deep: #0a0e17;
   --bg-surface: #0f1520;
