@@ -11,7 +11,7 @@
  *     writes every KV key space (incl. SADD users); sends email.
  *
  * See docs/architecture.md §3.1 for the canonical flow.
- * Rate limiting (IP + email) lands in #21 on top of this route.
+ * Rate-limited on both IP and email (#21).
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
@@ -28,12 +28,17 @@ import {
 import { DEFAULT_CONFIG } from '@/lib/config';
 import { sendKeyEmail } from '@/lib/email';
 import { buildKeyUrl, mintIds } from '@/lib/signup/mint';
+import { clientIp, emailLimiter, ipLimiter } from '@/lib/ratelimit';
 
 const SignupBody = z.object({
   email: z.string().email(),
 });
 
 const ACCEPTED = { status: 'check your email' } as const;
+
+function rateLimited(): NextResponse {
+  return NextResponse.json({ error: 'rate-limited' }, { status: 429 });
+}
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // Parse + validate body
@@ -48,6 +53,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'invalid email' }, { status: 400 });
   }
   const email = parsed.data.email.toLowerCase();
+
+  // Rate-limit by IP first (cheaper, no per-email Redis hit if we're going to reject anyway)
+  const ip = clientIp(req.headers);
+  const ipOk = await ipLimiter().limit(ip);
+  if (!ipOk.success) return rateLimited();
+
+  const emailOk = await emailLimiter().limit(email);
+  if (!emailOk.success) return rateLimited();
 
   const redis = getRedis();
   const origin = req.nextUrl.origin;

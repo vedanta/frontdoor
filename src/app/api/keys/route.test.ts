@@ -41,6 +41,14 @@ vi.mock('@/lib/email', () => ({
   },
 }));
 
+// Stub the rate limiters to always succeed (Upstash Ratelimit needs live Redis).
+vi.mock('@/lib/ratelimit', () => ({
+  clientIp: () => 'test-ip',
+  ipLimiter: () => ({ limit: async () => ({ success: true }) }),
+  emailLimiter: () => ({ limit: async () => ({ success: true }) }),
+  keyLimiter: () => ({ limit: async () => ({ success: true }) }),
+}));
+
 import { POST } from './route';
 import { NextRequest } from 'next/server';
 import { apiKeyKey, configKey, emailKey, slugKey, USERS_SET, userKey } from '@/lib/kv';
