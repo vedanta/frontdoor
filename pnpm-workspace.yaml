@@ -1,0 +1,6 @@
+# Allow these native modules to run their install scripts.
+# - sharp: Next.js image optimization (next/image)
+# - unrs-resolver: dependency resolution used by Next/ESLint internals
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
