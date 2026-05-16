@@ -1,0 +1,45 @@
+name: marketing-deploy
+
+# Publishes ./marketing/ to GitHub Pages on every push to main that touches
+# the marketing source. PRs into main do NOT deploy (workflow only fires on
+# push). To enable: Repo Settings → Pages → Source: GitHub Actions.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'marketing/**'
+      - '.github/workflows/marketing-deploy.yml'
+  workflow_dispatch: # allow manual re-deploy from the Actions tab
+
+# Required by deploy-pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one in-flight deploy at a time; queue new ones, cancel pending duplicates.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload marketing/ as the Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./marketing
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
