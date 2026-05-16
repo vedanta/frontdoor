@@ -17,7 +17,33 @@
  * src/app/* or middleware. Lets you `curl /?key=<that key>` (or visit
  * http://localhost:3000/?key=…) and immediately land at /d/{slug}.
  */
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+
+// Load .env.local up front — tsx doesn't auto-load it (only Next.js does).
+// Idempotent: existing process.env values win.
+(() => {
+  const path = join(process.cwd(), '.env.local');
+  if (!existsSync(path)) return;
+  for (const raw of readFileSync(path, 'utf8').split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq < 0) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    // Strip surrounding quotes — `vercel env pull` quotes its output.
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (key && !(key in process.env)) process.env[key] = value;
+  }
+})();
+
 import {
   apiKeyKey,
   configKey,
