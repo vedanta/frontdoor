@@ -1,17 +1,16 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * Sanity E2E — proves the Playwright wiring and that the scaffold page renders
- * the ported theme correctly. Will be replaced/expanded by #27 (full signup →
- * /d/{slug} → dashboard path).
+ * Sanity E2E for the widgets-demo placeholder page. Will be replaced by #27's
+ * full signup → /d/{slug} → dashboard suite once the auth/page work lands.
  */
-test('root route renders the scaffold panel with the ported theme', async ({ page }) => {
+test('root route renders the widgets demo with the ported theme', async ({ page }) => {
   await page.goto('/');
-  // The placeholder panel has its own h1, distinct from the .logo span.
-  await expect(page.getByRole('heading', { name: 'frontdoor', level: 1 })).toBeVisible();
-  // Text from the placeholder body.
-  await expect(page.getByText(/theme ported · awaiting widgets/)).toBeVisible();
-  // Theme is loaded: the body has the dark background. Just probe a CSS var is defined.
+  // Header logo
+  await expect(page.locator('.logo').first()).toContainText('frontdoor');
+  // Section divider title — case-exact to disambiguate from the lowercase tagline.
+  await expect(page.getByText('Widgets Demo', { exact: true })).toBeVisible();
+  // Theme variable is defined (sanity that theme.css loaded)
   const bg = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--bg-deep').trim(),
   );

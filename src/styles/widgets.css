@@ -1,0 +1,408 @@
+/**
+ * Per-widget CSS — extracted from design/reference/index.html lines 307–679
+ * (the original Python build inlined per-widget styles into the single HTML
+ * artifact). Font literals 'IBM Plex Sans/Mono' were swapped for
+ * var(--font-plex-sans/mono) so next/font's bindings apply.
+ * design/reference/index.html stays the IP reference.
+ */
+
+/* ── Widget: image ── */
+.image-widget {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.image-widget a {
+  display: block;
+}
+
+.image-widget img {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  opacity: 0.9;
+  transition: opacity 0.3s ease;
+}
+
+.image-widget:hover img {
+  opacity: 1;
+}
+
+.image-caption {
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+.image-caption-title {
+  font-size: 11px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.image-caption-desc {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.image-source {
+  margin-top: 6px;
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  opacity: 0.5;
+}
+
+/* ── Widget: weather ── */
+.weather-now {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.weather-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.weather-temp {
+  font-size: 28px;
+  font-weight: 300;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.weather-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.weather-details {
+  font-size: 10px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.weather-forecast-compact {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.weather-fc-day {
+  flex: 1;
+  text-align: center;
+  padding: 4px 2px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.weather-fc-day .fc-label {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.weather-fc-day .fc-icon {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.weather-fc-day .fc-temps {
+  font-size: 9px;
+  color: var(--text-secondary);
+}
+
+.weather-fc-day .fc-temps span {
+  color: var(--text-dim);
+}
+
+.weather-sun {
+  margin-top: 8px;
+  font-size: 9px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 10px;
+}
+
+/* ── Widget: text ── */
+.text-body {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.text-attribution {
+  margin-top: 8px;
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+
+.text-attribution a {
+  color: var(--text-dim);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border);
+}
+
+.text-attribution a:hover {
+  color: var(--accent-cyan);
+}
+
+.text-source {
+  margin-top: 6px;
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  opacity: 0.5;
+}
+
+/* ── Widget: headlines ── */
+.headlines-list {
+  list-style: none;
+}
+
+.headlines-list li {
+  margin-bottom: 2px;
+}
+
+.headlines-list a {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  text-decoration: none;
+  transition: background 0.2s ease;
+  line-height: 1.5;
+}
+
+.headlines-list a:hover {
+  background: rgba(78, 205, 196, 0.06);
+}
+
+.headline-title {
+  font-size: 12px;
+  color: var(--text-primary);
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.headline-source {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.headlines-footer {
+  margin-top: 8px;
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  opacity: 0.6;
+}
+
+/* ── Widget: section ── */
+.section-divider {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.section-divider-title {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.section-divider-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border-glow), transparent);
+}
+
+.section-divider-sub {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+
+/* ── Widget: launcher ── */
+.launcher-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.launcher-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  background: transparent;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.launcher-tile:hover {
+  background: rgba(78, 205, 196, 0.08);
+}
+
+.launcher-favicon {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.launcher-favicon--fallback {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  background: var(--glow-cyan);
+}
+
+.launcher-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 9px;
+  color: var(--text-primary);
+  background: var(--bg-deep);
+  border: 1px solid var(--border-glow);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 10;
+}
+
+.launcher-tile:hover .launcher-tooltip {
+  opacity: 1;
+}
+
+/* ── Widget: links ── */
+.link-list {
+  list-style: none;
+}
+
+.link-list li {
+  margin-bottom: 1px;
+}
+
+.link-list a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 12.5px;
+  transition: all 0.2s ease;
+}
+
+.link-list a:hover {
+  background: rgba(78, 205, 196, 0.06);
+  color: var(--accent-cyan);
+}
+
+.link-list .link-tag {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.link-list .link-tag--news {
+  color: var(--accent-amber);
+  background: rgba(251, 191, 36, 0.1);
+}
+.link-list .link-tag--tech {
+  color: var(--accent-cyan);
+  background: rgba(78, 205, 196, 0.1);
+}
+.link-list .link-tag--ai {
+  color: var(--accent-violet);
+  background: rgba(167, 139, 250, 0.1);
+}
+.link-list .link-tag--dev {
+  color: var(--accent-blue);
+  background: rgba(91, 141, 239, 0.1);
+}
+.link-list .link-tag--media {
+  color: var(--accent-rose);
+  background: rgba(244, 114, 182, 0.1);
+}
+.link-list .link-tag--social {
+  color: var(--accent-green);
+  background: rgba(52, 211, 153, 0.1);
+}
+.link-list .link-tag--biz {
+  color: var(--accent-amber);
+  background: rgba(251, 191, 36, 0.08);
+}
+.link-list .link-tag--finance {
+  color: var(--accent-green);
+  background: rgba(52, 211, 153, 0.08);
+}
+.link-list .link-tag--default {
+  color: var(--text-dim);
+  background: var(--bg-surface);
+}
+
+.link-list .link-key {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  min-width: 18px;
+  text-align: center;
+  margin-left: auto;
+  flex-shrink: 0;
+}

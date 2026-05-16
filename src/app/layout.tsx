@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import '@/styles/theme.css';
+import '@/styles/widgets.css';
 
 // Self-hosted via next/font (replaces the @import url(...Google Fonts...) at the
 // top of design/theme.css). Exposed as CSS variables so theme.css can reference
