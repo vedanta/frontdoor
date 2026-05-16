@@ -8,7 +8,17 @@ const eslintConfig = defineConfig([
   ...nextTs,
   prettier,
   // Override default ignores of eslint-config-next.
-  globalIgnores(['.next/**', 'out/**', 'build/**', 'next-env.d.ts']),
+  globalIgnores([
+    '.next/**',
+    'out/**',
+    'build/**',
+    'next-env.d.ts',
+    // Playwright runs under its own runner with its own globals; skip ESLint here.
+    'e2e/**',
+    'playwright-report/**',
+    'test-results/**',
+    'coverage/**',
+  ]),
 ]);
 
 export default eslintConfig;

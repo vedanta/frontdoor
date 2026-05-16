@@ -1,6 +1,8 @@
-# Allow these native modules to run their install scripts.
+# Allow these native / postinstall scripts to run.
 # - sharp: Next.js image optimization (next/image)
 # - unrs-resolver: dependency resolution used by Next/ESLint internals
+# - msw: Mock Service Worker postinstall (sets up service-worker assets)
 allowBuilds:
   sharp: true
   unrs-resolver: true
+  msw: true
