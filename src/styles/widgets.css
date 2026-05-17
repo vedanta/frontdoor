@@ -43,6 +43,19 @@
   opacity: 1;
 }
 
+/* Exception-only stale caption (#81b) — shown only when a widget's data
+   was served from a previous-day cache (because today's fetch failed and
+   withResilience fell back). Hidden on the happy path. Dim, small,
+   prefixed with `─` so it reads as metadata not body text. */
+.stale-caption {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--font-plex-mono), monospace;
+  letter-spacing: 0.5px;
+  margin-top: 6px;
+  opacity: 0.7;
+}
+
 .image-caption {
   margin-top: 8px;
   line-height: 1.4;

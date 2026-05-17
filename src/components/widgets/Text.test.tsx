@@ -76,4 +76,39 @@ describe('TextWidget', () => {
     render(<TextWidget widget={quoteWidget} data={null} />);
     expect(screen.getByText('could not load')).toBeInTheDocument();
   });
+
+  it('does NOT render the stale caption when fetchedAt is today (#81b)', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const { container } = render(
+      <TextWidget
+        widget={quoteWidget}
+        fetchedAt={today}
+        data={{ body: 'Be kind.', attribution: 'Anon', sourceLabel: '' }}
+      />,
+    );
+    expect(container.querySelector('.stale-caption')).not.toBeInTheDocument();
+  });
+
+  it('renders the stale caption when fetchedAt is older than today (#81b)', () => {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const { container } = render(
+      <TextWidget
+        widget={quoteWidget}
+        fetchedAt={yesterday}
+        data={{ body: 'Be kind.', attribution: 'Anon', sourceLabel: '' }}
+      />,
+    );
+    expect(container.querySelector('.stale-caption')?.textContent).toBe('─ yesterday');
+  });
+
+  it('does NOT render the stale caption when fetchedAt is null (legacy / unknown)', () => {
+    const { container } = render(
+      <TextWidget
+        widget={quoteWidget}
+        fetchedAt={null}
+        data={{ body: 'Be kind.', attribution: 'Anon', sourceLabel: '' }}
+      />,
+    );
+    expect(container.querySelector('.stale-caption')).not.toBeInTheDocument();
+  });
 });

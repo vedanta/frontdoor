@@ -7,9 +7,15 @@
  *
  * Failures are never written to cache (don't poison future reads).
  *
+ * Since #81b: every successful result carries `fetchedAt` (`YYYY-MM-DD`)
+ * so widget renderers can surface "served from yesterday's cache" via a
+ * stale caption. The date comes from the cache envelope (new format) or
+ * is computed as "today" for live fetches.
+ *
  * See docs/architecture.md §6 → Resilience for the why.
  */
 import { getCached, setCached } from './cache';
+import { formatDate } from '@/lib/kv/keys';
 import type { FetchResult } from './types';
 
 export type WithResilienceOptions<T> = {
@@ -25,24 +31,41 @@ export async function withResilience<T>(
   key: string,
   options: WithResilienceOptions<T>,
 ): Promise<FetchResult<T>> {
+  const today = formatDate();
+
   // 1. cache hit
   const cached = await getCached<T>(key);
   if (cached !== null) {
-    return { ok: true, data: cached, fresh: false };
+    return {
+      ok: true,
+      data: cached.data,
+      fresh: false,
+      // `fetchedAt` from the cache envelope (new format) or undefined for
+      // legacy values — the UI treats undefined as "unknown, no caption."
+      ...(cached.fetchedAt !== null ? { fetchedAt: cached.fetchedAt } : {}),
+    };
   }
 
   // 2. live fetch
   const live = await options.fetcher();
   if (live.ok) {
-    await setCached(key, live.data, { ttlSeconds: options.ttlSeconds });
-    return live;
+    await setCached(key, live.data, {
+      ttlSeconds: options.ttlSeconds,
+      fetchedAt: today,
+    });
+    return { ...live, fetchedAt: today };
   }
 
   // 3. stale fallback (if a stale key was provided)
   if (options.staleFallbackKey) {
     const stale = await getCached<T>(options.staleFallbackKey);
     if (stale !== null) {
-      return { ok: true, data: stale, fresh: false };
+      return {
+        ok: true,
+        data: stale.data,
+        fresh: false,
+        ...(stale.fetchedAt !== null ? { fetchedAt: stale.fetchedAt } : {}),
+      };
     }
   }
 

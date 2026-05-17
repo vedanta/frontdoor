@@ -44,14 +44,33 @@ describe('cache (getCached / setCached)', () => {
     expect(await getCached('missing')).toBeNull();
   });
 
-  it('round-trips an object', async () => {
+  it('round-trips an object with default fetchedAt = today', async () => {
     await setCached('foo', { hello: 'world' });
-    expect(await getCached<{ hello: string }>('foo')).toEqual({ hello: 'world' });
+    const read = await getCached<{ hello: string }>('foo');
+    expect(read?.data).toEqual({ hello: 'world' });
+    // fetchedAt defaults to today (YYYY-MM-DD)
+    expect(read?.fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('round-trips a primitive', async () => {
     await setCached('count', 42);
-    expect(await getCached<number>('count')).toBe(42);
+    const read = await getCached<number>('count');
+    expect(read?.data).toBe(42);
+    expect(read?.fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('preserves an explicit fetchedAt', async () => {
+    await setCached('foo', 1, { fetchedAt: '2026-05-15' });
+    const read = await getCached<number>('foo');
+    expect(read?.fetchedAt).toBe('2026-05-15');
+  });
+
+  it('reads a legacy raw value with fetchedAt: null (#81b backward compat)', async () => {
+    // Simulate a value written before #81b — raw T, not wrapped in envelope
+    store.set('legacy', { value: { hello: 'old' }, expiresAt: Date.now() + 60_000 });
+    const read = await getCached<{ hello: string }>('legacy');
+    expect(read?.data).toEqual({ hello: 'old' });
+    expect(read?.fetchedAt).toBeNull();
   });
 
   it('defaults TTL to ~26h', async () => {

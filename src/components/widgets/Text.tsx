@@ -10,6 +10,7 @@ import type { TextWidget as TextWidgetConfig } from '@/lib/config';
 import type { TextItem } from '@/lib/data/sources/types';
 import { Panel } from './Panel';
 import { CouldNotLoad } from './CouldNotLoad';
+import { StaleCaption } from './StaleCaption';
 
 const MONTH_NAMES = [
   'January',
@@ -29,6 +30,13 @@ const MONTH_NAMES = [
 type Props = {
   widget: TextWidgetConfig;
   data: TextItem | null;
+  /**
+   * When the widget's data was originally fetched (YYYY-MM-DD UTC). Threaded
+   * from `withResilience` via the dispatcher. Surfaces "yesterday" /
+   * "from May 10" via <StaleCaption /> when content was served from a
+   * previous-day cache. Per #81b.
+   */
+  fetchedAt?: string | null;
 };
 
 /** `onthisday` titles get `· MM/DD` appended per design/03. */
@@ -38,7 +46,7 @@ function titleWith(widget: TextWidgetConfig, date: Date = new Date()): string {
   return `${widget.title} · ${month} ${date.getUTCDate()}`;
 }
 
-export function TextWidget({ widget, data }: Props) {
+export function TextWidget({ widget, data, fetchedAt }: Props) {
   return (
     <Panel color={widget.color} span={widget.span} icon={widget.icon} title={titleWith(widget)}>
       {!data ? (
@@ -59,6 +67,7 @@ export function TextWidget({ widget, data }: Props) {
             </div>
           )}
           {data.sourceLabel && <div className="text-source">{data.sourceLabel}</div>}
+          <StaleCaption fetchedAt={fetchedAt} />
         </>
       )}
     </Panel>

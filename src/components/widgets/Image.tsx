@@ -13,11 +13,19 @@
 import type { ImageWidget as ImageWidgetConfig } from '@/lib/config';
 import type { ImageItem } from '@/lib/data/sources/types';
 import { Panel } from './Panel';
+import { StaleCaption } from './StaleCaption';
 
 type Props = {
   widget: ImageWidgetConfig;
   /** Required for daily sources; ignored when source is 'static'. */
   data?: ImageItem | null;
+  /**
+   * When the widget's data was originally fetched (YYYY-MM-DD UTC). Threaded
+   * from `withResilience` via the dispatcher; only set for daily sources.
+   * Used to render the exception-only stale caption (#81b) when content
+   * was served from a previous-day cache.
+   */
+  fetchedAt?: string | null;
 };
 
 function imageItemFromStatic(widget: ImageWidgetConfig): ImageItem | null {
@@ -32,7 +40,7 @@ function imageItemFromStatic(widget: ImageWidgetConfig): ImageItem | null {
   };
 }
 
-export function ImageWidget({ widget, data }: Props) {
+export function ImageWidget({ widget, data, fetchedAt }: Props) {
   const item: ImageItem | null =
     widget.source === 'static' ? imageItemFromStatic(widget) : (data ?? null);
 
@@ -67,6 +75,7 @@ export function ImageWidget({ widget, data }: Props) {
             {item.description && <div className="image-caption-desc">{item.description}</div>}
           </div>
           {item.sourceLabel && <div className="image-source">{item.sourceLabel}</div>}
+          <StaleCaption fetchedAt={fetchedAt} />
         </>
       )}
     </Panel>
