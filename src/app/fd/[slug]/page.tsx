@@ -17,6 +17,7 @@ import { configKey, getRedis } from '@/lib/kv';
 import { getSessionFromCookie } from '@/lib/auth';
 import { DashboardConfigSchema, type DashboardConfig } from '@/lib/config';
 import { Clock } from '@/components/Clock';
+import { ScrollProgress } from '@/components/ScrollProgress';
 import { StatusBar } from '@/components/StatusBar';
 import { SearchBar, buildShortcuts } from '@/components/search';
 import { SectionDivider } from '@/components/widgets';
@@ -56,6 +57,7 @@ export default async function DashboardPage({ params }: Props) {
 
   return (
     <>
+      <ScrollProgress />
       <div className="grid-dots" />
       <div className="shell">
         <header className="header">
