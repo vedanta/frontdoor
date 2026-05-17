@@ -7,11 +7,17 @@
 #   ./fd.sh <env> <subgroup> <action> [args]
 #
 #     env       prod | local         (which environment to hit)
-#     subgroup  user | cache         (feature area — `cache` covers cache-warming
-#                                     and ISR cache invalidation; both auth via
-#                                     CRON_SECRET in their respective envs)
-#     action    signup / refresh / revalidate   (verb; refresh = /api/refresh,
-#                                                revalidate = /api/revalidate)
+#     subgroup  user | cache | server  (feature area)
+#                 - `user`   account-related (signup)
+#                 - `cache`  cache-warming + ISR invalidation; auth via
+#                            CRON_SECRET (PROD_CRON_SECRET for prod env)
+#                 - `server` dev-server lifecycle — LOCAL ONLY (prod is
+#                            managed by Vercel, not by this CLI)
+#     action    signup / refresh / revalidate / start / stop / restart / kill /
+#               status / logs
+#                 - signup, refresh, revalidate are the HTTP-poke actions
+#                 - start, stop, restart, kill, status, logs are server-lifecycle
+#                   actions (local server only)
 #
 # The split mirrors the operational reality: every action exists in both
 # environments and does the same thing — only the URL and secret change.
@@ -49,6 +55,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # override via env var if you need to (e.g. preview deploys, remote dev).
 FD_PROD_BASE_URL="${FD_PROD_BASE_URL:-https://frontdoor.barooah.io}"
 FD_LOCAL_BASE_URL="${FD_LOCAL_BASE_URL:-http://localhost:3000}"
+
+# Local server lifecycle state — kept in .cache/ (gitignored per CLAUDE.md).
+CACHE_DIR="$SCRIPT_DIR/.cache"
+DEV_PID_FILE="$CACHE_DIR/dev.pid"
+DEV_LOG_FILE="$CACHE_DIR/dev.log"
+DEV_PORT="3000"
+DEV_READY_TIMEOUT="30"   # seconds to wait for server to respond after start
+DEV_STOP_TIMEOUT="5"     # seconds to wait for graceful shutdown
 
 # Auto-source .env.local relative to the script (not cwd) so fd.sh works from
 # any subdir. Quiet on absence; per-action `require_*` helpers error specifically.
@@ -101,7 +115,14 @@ show_help() {
   _action   "prod cache refresh"              "Refresh data + pages (= /api/refresh)"
   _action   "prod cache revalidate [userId]"  "Revalidate page ISR only (= /api/revalidate)"
   echo ""
-  _section "Local" "($FD_LOCAL_BASE_URL — needs \`pnpm dev\` running; no schedule)"
+  _section "Local" "($FD_LOCAL_BASE_URL — no schedule; manage \`pnpm dev\` via server actions below)"
+  _subgroup "server"
+  _action   "local server start"               "Spawn \`pnpm dev\` (background, PID tracked)"
+  _action   "local server stop"                "SIGTERM (graceful)"
+  _action   "local server restart"             "Stop + start"
+  _action   "local server kill"                "SIGKILL (force; for stuck processes)"
+  _action   "local server status"              "PID, uptime, URL, log path, port collisions"
+  _action   "local server logs"                "tail -f the dev log"
   _subgroup "user"
   _action   "local user signup <email>"        "...against dev"
   _subgroup "cache"
@@ -171,6 +192,67 @@ Restart \`pnpm dev\` so the dev server picks up the new value.
 EOF
     exit 1
   fi
+}
+
+# ── Dev-server lifecycle helpers ───────────────────────────────────────────
+
+_ensure_cache_dir() { mkdir -p "$CACHE_DIR"; }
+
+# Echo the live PID and return 0 if a tracked dev server is running.
+# Return 1 (with no output) if no PID file, file is garbage, or process dead.
+_dev_pid() {
+  [[ -f "$DEV_PID_FILE" ]] || return 1
+  local pid
+  pid=$(cat "$DEV_PID_FILE" 2>/dev/null)
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  echo "$pid"
+}
+
+_port_in_use() {
+  lsof -nP -iTCP:"$DEV_PORT" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+# True if $1 is $2 or a descendant of $2 (walks the parent chain up to 10
+# levels). Used so `next-server` workers spawned by our tracked `pnpm dev`
+# don't get flagged as rogue processes by `_rogue_pids_on_port`.
+_is_descendant_of() {
+  local pid="$1" ancestor="$2" current="$1" depth=0
+  while [[ -n "$current" ]] && (( depth < 10 )); do
+    [[ "$current" == "$ancestor" ]] && return 0
+    current=$(ps -p "$current" -o ppid= 2>/dev/null | tr -d ' ')
+    [[ -z "$current" || "$current" == "0" || "$current" == "1" ]] && return 1
+    ((depth++))
+  done
+  return 1
+}
+
+# Recursively echo descendant PIDs of $1 (children, grandchildren, ...).
+# Used by stop/kill to clean up the whole process tree — pnpm dev spawns a
+# next-server worker that survives SIGTERM to the parent if not also killed.
+_descendant_pids() {
+  local parent="$1" child
+  for child in $(pgrep -P "$parent" 2>/dev/null); do
+    echo "$child"
+    _descendant_pids "$child"
+  done
+}
+
+# Print PIDs holding $DEV_PORT that are NOT our tracked dev server (or any
+# of its descendants). Useful to detect a Vercel CLI, a leftover dev server
+# from another checkout, or a port-binding misconfiguration.
+_rogue_pids_on_port() {
+  local tracked
+  tracked=$(_dev_pid 2>/dev/null || true)
+  local all_pids
+  all_pids=$(lsof -nP -iTCP:"$DEV_PORT" -sTCP:LISTEN -t 2>/dev/null || true)
+  local pid
+  for pid in $all_pids; do
+    if [[ -n "$tracked" ]] && _is_descendant_of "$pid" "$tracked"; then
+      continue  # ours (or a child of ours) — not rogue
+    fi
+    echo "$pid"
+  done
 }
 
 # Issue a POST with a bearer token; print → / status / pretty body. Sets the
@@ -319,6 +401,194 @@ local_user_signup()       { require_curl; _impl_user_signup "$FD_LOCAL_BASE_URL"
 local_cache_refresh()         { require_curl; require_local_cron_secret; _impl_cache_refresh "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local"; }
 local_cache_revalidate() { require_curl; require_local_cron_secret; _impl_cache_revalidate "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local" "${1:-}"; }
 
+# ── Local server lifecycle actions (local-only; prod is Vercel) ────────────
+
+# local server start
+#   Spawn `pnpm dev` in the background, track its PID, redirect output to
+#   .cache/dev.log, and poll the port until it responds (up to
+#   DEV_READY_TIMEOUT seconds). Refuses to start if a tracked server is
+#   already running OR if the port is held by an untracked process.
+local_server_start() {
+  _ensure_cache_dir
+  local pid
+  if pid=$(_dev_pid); then
+    warn "Dev server already running (PID $pid)"
+    echo "    URL: $FD_LOCAL_BASE_URL" >&2
+    echo "    log: $DEV_LOG_FILE" >&2
+    return 0
+  fi
+  if _port_in_use; then
+    err "Port $DEV_PORT is held by something not tracked by fd:"
+    lsof -nP -iTCP:"$DEV_PORT" -sTCP:LISTEN 2>&1 | tail -n +1 | head -3 | sed 's/^/    /' >&2
+    echo "    Kill it manually, or: ./fd.sh local server kill" >&2
+    exit 1
+  fi
+
+  log "Starting dev server on port $DEV_PORT"
+  echo "  $(dim "log → $DEV_LOG_FILE")"
+  # Background pnpm dev with full output capture. nohup so it survives our
+  # shell exit; redirect both streams so the log captures Next's startup.
+  ( cd "$SCRIPT_DIR" && nohup pnpm dev >"$DEV_LOG_FILE" 2>&1 & echo $! >"$DEV_PID_FILE" )
+
+  local pid_started
+  pid_started=$(cat "$DEV_PID_FILE")
+  local i
+  for ((i=1; i<=DEV_READY_TIMEOUT; i++)); do
+    if ! kill -0 "$pid_started" 2>/dev/null; then
+      err "Dev server PID $pid_started died during startup"
+      echo "    Check the log: $DEV_LOG_FILE" >&2
+      rm -f "$DEV_PID_FILE"
+      exit 1
+    fi
+    if curl -sS -o /dev/null --max-time 1 "http://localhost:$DEV_PORT/" 2>/dev/null; then
+      ok "Dev server ready: $FD_LOCAL_BASE_URL (PID $pid_started, took ${i}s)"
+      return 0
+    fi
+    sleep 1
+  done
+  err "Dev server started (PID $pid_started) but didn't respond within ${DEV_READY_TIMEOUT}s"
+  echo "    Check the log: $DEV_LOG_FILE" >&2
+  echo "    Force-kill:    ./fd.sh local server kill" >&2
+  exit 1
+}
+
+# local server stop
+#   SIGTERM the tracked PID and all its descendants (collected BEFORE
+#   killing the parent — once parent dies the kids are orphaned and we
+#   can't enumerate them via pgrep -P anymore). Wait DEV_STOP_TIMEOUT for
+#   graceful exit; clean up the PID file. Falls through with guidance to
+#   `kill` if anything doesn't exit gracefully.
+local_server_stop() {
+  local pid
+  if ! pid=$(_dev_pid); then
+    log "Dev server is not running"
+    [[ -f "$DEV_PID_FILE" ]] && rm -f "$DEV_PID_FILE"
+    return 0
+  fi
+  # Collect descendants FIRST — if we kill parent first, kids are orphaned
+  # to PID 1 and we can no longer enumerate them via pgrep -P <parent>.
+  local descendants
+  descendants=$(_descendant_pids "$pid" | tr '\n' ' ')
+  log "Stopping dev server (PID $pid + descendants: ${descendants:-none}, SIGTERM)"
+  local p
+  for p in $pid $descendants; do
+    kill "$p" 2>/dev/null || true
+  done
+
+  local i
+  for ((i=1; i<=DEV_STOP_TIMEOUT; i++)); do
+    local any_alive=0
+    for p in $pid $descendants; do
+      kill -0 "$p" 2>/dev/null && { any_alive=1; break; }
+    done
+    if (( any_alive == 0 )); then
+      ok "Dev server stopped"
+      rm -f "$DEV_PID_FILE"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "Dev server didn't stop within ${DEV_STOP_TIMEOUT}s"
+  echo "    Force-kill: ./fd.sh local server kill" >&2
+  exit 1
+}
+
+# local server kill
+#   SIGKILL the tracked PID + all descendants immediately. Also opportunistic:
+#   if anything still holds $DEV_PORT after that (rogue / orphaned from a
+#   previous bad stop), SIGKILL those too. The goal of `kill` is "make it
+#   stop, now" — be aggressive.
+local_server_kill() {
+  local pid descendants
+  if pid=$(_dev_pid); then
+    descendants=$(_descendant_pids "$pid" | tr '\n' ' ')
+    log "Force-killing dev server (PID $pid + descendants: ${descendants:-none}, SIGKILL)"
+    local p
+    for p in $pid $descendants; do
+      kill -9 "$p" 2>/dev/null || true
+    done
+    sleep 1
+    ok "Dev server killed"
+  else
+    log "No tracked dev server"
+  fi
+  rm -f "$DEV_PID_FILE"
+
+  # Mop up anything still on the port (orphans from a previous bad stop,
+  # or processes started outside fd.sh).
+  local rogue
+  rogue=$(_rogue_pids_on_port)
+  if [[ -n "$rogue" ]]; then
+    local rogue_pids
+    rogue_pids=$(echo "$rogue" | tr '\n' ' ')
+    warn "Killing untracked process(es) on port $DEV_PORT: $rogue_pids"
+    for p in $rogue; do
+      kill -9 "$p" 2>/dev/null || true
+    done
+    sleep 1
+    if _port_in_use; then
+      err "Port $DEV_PORT is still in use after kill"
+      lsof -nP -iTCP:"$DEV_PORT" -sTCP:LISTEN 2>&1 | head -3 | sed 's/^/    /' >&2
+      exit 1
+    fi
+    ok "Port $DEV_PORT cleared"
+  fi
+}
+
+# local server restart
+#   stop + start. Wraps both; if stop fails (process won't exit), surface
+#   that and bail rather than fighting through.
+local_server_restart() {
+  local_server_stop
+  sleep 1
+  local_server_start
+}
+
+# local server status
+#   Multi-fact summary: PID, uptime, port state, log path, plus a warning
+#   about any rogue process holding the port without our tracking.
+local_server_status() {
+  local pid
+  if pid=$(_dev_pid); then
+    log "Dev server: running"
+    local etime
+    etime=$(ps -p "$pid" -o etime= 2>/dev/null | tr -d ' ')
+    echo "    PID:    $pid"
+    [[ -n "$etime" ]] && echo "    uptime: $etime"
+    echo "    URL:    $FD_LOCAL_BASE_URL"
+    echo "    log:    $DEV_LOG_FILE"
+  else
+    log "Dev server: not running"
+    if [[ -f "$DEV_PID_FILE" ]]; then
+      warn "Found stale PID file at $DEV_PID_FILE — cleaning up"
+      rm -f "$DEV_PID_FILE"
+    fi
+  fi
+
+  # Always check for rogue listeners on port — useful even when our tracked
+  # state is empty (someone started dev outside fd.sh).
+  local rogue
+  rogue=$(_rogue_pids_on_port)
+  if [[ -n "$rogue" ]]; then
+    warn "Port $DEV_PORT is also held by untracked process(es): $(echo "$rogue" | tr '\n' ' ')"
+    echo "    Inspect: lsof -nP -iTCP:$DEV_PORT -sTCP:LISTEN" >&2
+  fi
+}
+
+# local server logs
+#   tail -f on the dev log. Errors clearly if the log doesn't exist (no
+#   server has ever started under fd.sh).
+local_server_logs() {
+  if [[ ! -f "$DEV_LOG_FILE" ]]; then
+    err "No log file at $DEV_LOG_FILE"
+    echo "    Start the server first: ./fd.sh local server start" >&2
+    exit 1
+  fi
+  log "Tailing $DEV_LOG_FILE ($(dim "Ctrl-C to stop"))"
+  echo
+  tail -f "$DEV_LOG_FILE"
+}
+
 # ── Sub-dispatchers (subgroup → action) ────────────────────────────────────
 # One per (env, subgroup) — list available actions on bad input.
 
@@ -388,6 +658,27 @@ local_cache_dispatch() {
   esac
 }
 
+local_server_dispatch() {
+  local action="${1:-}"
+  if [[ -z "$action" ]]; then
+    err "local server: missing action"
+    echo "    available: start, stop, restart, kill, status, logs" >&2
+    exit 64
+  fi
+  shift
+  case "$action" in
+    start)   local_server_start "$@" ;;
+    stop)    local_server_stop "$@" ;;
+    restart) local_server_restart "$@" ;;
+    kill)    local_server_kill "$@" ;;
+    status)  local_server_status "$@" ;;
+    logs)    local_server_logs "$@" ;;
+    *) err "unknown local server action: $action"
+       echo "    available: start, stop, restart, kill, status, logs" >&2
+       exit 64 ;;
+  esac
+}
+
 # ── Env dispatchers (env → subgroup) ───────────────────────────────────────
 
 prod_dispatch() {
@@ -411,15 +702,16 @@ local_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "local: missing subgroup"
-    echo "    available: user, cache" >&2
+    echo "    available: server, user, cache" >&2
     exit 64
   fi
   shift
   case "$sub" in
-    user) local_user_dispatch "$@" ;;
-    cache) local_cache_dispatch "$@" ;;
+    server) local_server_dispatch "$@" ;;
+    user)   local_user_dispatch "$@" ;;
+    cache)  local_cache_dispatch "$@" ;;
     *) err "unknown local subgroup: $sub"
-       echo "    available: user, cache" >&2
+       echo "    available: server, user, cache" >&2
        exit 64 ;;
   esac
 }
