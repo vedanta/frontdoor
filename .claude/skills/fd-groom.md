@@ -31,7 +31,7 @@ gh issue list --repo vedanta/frontdoor --state open --json number,title,mileston
 Spot-check:
 - **Unlabeled / unmilestoned issues** — usually idea-logs typed mid-session; need triage attention.
 - **Missing priority** (no `P0`/`P1`/`P2`/`P3`) — needs one.
-- **Missing batch** (no `batch:*`) — needs one if it groups with other work; one-issue batches OK for epics.
+- **Missing batch** (no `batch-*`) — needs one if it groups with other work; one-issue batches OK for epics.
 - **Title vs scope drift** — if the title still says "v0.2" but v0.2 shipped, the body needs rewriting.
 - **Stale labels** — note any labels with zero open issues; offer to delete at end of pass.
 
@@ -52,9 +52,9 @@ If priority not set, propose one based on impact/urgency. Don't downgrade someth
 
 #### Batch — does this naturally execute with other issues?
 
-- If a `batch:*` label already covers its area, apply it.
-- If 2+ issues form a logical execution unit (related work, shared scope, dependency chain), propose a new `batch:NAME` label.
-- Single-issue batches are OK for epics with internal multi-action checklists (e.g. `batch:fd-cli` covers the v0.3 multi-command issue).
+- If a `batch-*` label already covers its area, apply it.
+- If 2+ issues form a logical execution unit (related work, shared scope, dependency chain), propose a new `batch-NAME` label.
+- Single-issue batches are OK for epics with internal multi-action checklists (e.g. `batch-fd-cli` covers the v0.3 multi-command issue).
 - All batch labels use color `#1D76DB` (medium blue) — the name distinguishes.
 
 #### Milestone
@@ -97,7 +97,7 @@ Standard `gh` ceremony.
 
 **Add labels:**
 ```bash
-gh issue edit N --repo vedanta/frontdoor --add-label "P2" --add-label "batch:foo"
+gh issue edit N --repo vedanta/frontdoor --add-label "P2" --add-label "batch-foo"
 ```
 
 **Move milestone:**
@@ -143,14 +143,14 @@ gh label create "P2" --color "FBCA04" --description "Normal — schedule in"
 gh label create "P3" --color "C5DEF5" --description "Idea / watch — no commitment"
 
 # Batch labels — all same color, name distinguishes
-gh label create "batch:NAME" --color "1D76DB" --description "What's in this batch"
+gh label create "batch-NAME" --color "1D76DB" --description "What's in this batch"
 ```
 
 ### 4. Verify
 
 ```bash
 # Final state grouped by batch + priority
-for batch in $(gh label list --repo vedanta/frontdoor --json name --jq '.[].name | select(startswith("batch:"))'); do
+for batch in $(gh label list --repo vedanta/frontdoor --json name --jq '.[].name | select(startswith("batch-"))'); do
   echo ""
   echo "── $batch ──"
   gh issue list --repo vedanta/frontdoor --state open --label "$batch" \
@@ -162,7 +162,7 @@ done
 echo ""
 echo "── ORPHANS (no batch) ──"
 gh issue list --repo vedanta/frontdoor --state open --json number,title,labels \
-  --jq '.[] | select((.labels | map(.name) | any(. | startswith("batch:"))) | not) | "  #\(.number) [\(.labels | map(select(.name | test("^P[0-3]"))) | map(.name) | first // "—")] \(.title)"'
+  --jq '.[] | select((.labels | map(.name) | any(. | startswith("batch-"))) | not) | "  #\(.number) [\(.labels | map(select(.name | test("^P[0-3]"))) | map(.name) | first // "—")] \(.title)"'
 ```
 
 The GitHub search index has a brief lag (1-3s) after label changes; if the by-label query shows fewer issues than you expect, `sleep 3` and re-query.
@@ -182,7 +182,8 @@ Exactly one per issue. Add at triage; only escalate/downgrade with stated reason
 
 ### Batch labels
 
-- Always prefixed `batch:` (queryable via `label:batch:NAME`).
+- Always prefixed `batch-` (queryable via `label:batch-NAME`).
+- **Use hyphen, NOT colon.** GitHub's search syntax uses `:` as its own separator (`label:foo`, `is:open`), so labels containing a `:` break URL filters and search disambiguation. Originally used `batch:*` and renamed in-place to `batch-*` after hitting filter errors — don't go back.
 - Color: `#1D76DB` (medium blue) — uniform across all batch labels.
 - Description tells the reader what's in the batch.
 - Created on-demand during grooming; existing batches reused before creating new ones.
@@ -272,16 +273,16 @@ Don't delete `wontfix` / `duplicate` / `invalid` / `enhancement` / `bug` / `docu
 End of a grooming pass should print a clean grouped summary like:
 
 ```
-batch:ui-freshness  →  #65 scroll progress                  [P3]
+batch-ui-freshness  →  #65 scroll progress                  [P3]
                       #66 per-widget refresh time            [P3]
                       #67 status-bar oldest-refresh          [P3]  ← depends on #66
 
-batch:fd-cli        →  #58 fd.sh v0.3                        [P2]
+batch-fd-cli        →  #58 fd.sh v0.3                        [P2]
 
-batch:infra-hygiene →  #61 CI guard: GH Pages cname          [P3]
+batch-infra-hygiene →  #61 CI guard: GH Pages cname          [P3]
                       #62 Next 16 middleware → proxy watch   [P3]
 
-batch:resend        →  #26 verified custom sender            [P2]  ⚠ blocked
+batch-resend        →  #26 verified custom sender            [P2]  ⚠ blocked
 ```
 
 Plus a short "what changed in this pass" section: labels added, milestones moved, issues split, issues closed.
