@@ -7,3 +7,4 @@ export { WeatherWidget } from './Weather';
 export { ImageWidget } from './Image';
 export { TextWidget } from './Text';
 export { CouldNotLoad } from './CouldNotLoad';
+export { StaleCaption } from './StaleCaption';
