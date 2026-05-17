@@ -1,9 +1,9 @@
 ---
-name: build
-description: Walk the next ready MVP issue from `MVP` milestone end-to-end (branch → implement + tests → PR `Fixes #N` → HITL → merge → cleanup → loop). Sequential, in-chat, PR-per-issue. Invoke as `/build`, `/build status`, `/build #N`, or `/build resume`.
+name: fd-build
+description: Walk the next ready MVP issue from `MVP` milestone end-to-end (branch → implement + tests → PR `Fixes #N` → HITL → merge → cleanup → loop). Sequential, in-chat, PR-per-issue. Invoke as `/fd-build`, `/fd-build status`, `/fd-build #N`, or `/fd-build resume`.
 ---
 
-# /build — the frontdoor MVP orchestrator
+# /fd-build — the frontdoor MVP orchestrator
 
 You are walking GitHub issues on the `MVP` milestone of `vedanta/frontdoor` to
 completion, one at a time. This skill is the playbook. The design behind it is in
@@ -12,10 +12,10 @@ then operate from this file.
 
 ## Invocation shapes
 
-- **`/build`** — pick the next ready issue and run the cycle below.
-- **`/build status`** — print a summary of closed / in-flight / blocked / ready issues; do nothing else.
-- **`/build #N`** — work issue `N` explicitly, even if deps aren't satisfied (treat with caution; ask for confirmation).
-- **`/build resume`** — if a previous run was interrupted, find any branch matching `feat/<N>-*` with an open `in-progress` issue and resume the cycle for it.
+- **`/fd-build`** — pick the next ready issue and run the cycle below.
+- **`/fd-build status`** — print a summary of closed / in-flight / blocked / ready issues; do nothing else.
+- **`/fd-build #N`** — work issue `N` explicitly, even if deps aren't satisfied (treat with caution; ask for confirmation).
+- **`/fd-build resume`** — if a previous run was interrupted, find any branch matching `feat/<N>-*` with an open `in-progress` issue and resume the cycle for it.
 
 ## The cycle (one issue end-to-end)
 
