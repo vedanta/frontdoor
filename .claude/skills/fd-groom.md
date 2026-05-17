@@ -188,6 +188,30 @@ Exactly one per issue. Add at triage; only escalate/downgrade with stated reason
 - Created on-demand during grooming; existing batches reused before creating new ones.
 - Single-issue batches OK when the issue is an epic with internal multi-action scope.
 
+### `backburner` label
+
+| Label | Color | Description |
+|-------|-------|-------------|
+| `backburner` | `#9E9E9E` (muted gray) | Paused — design or context needs to change before revisiting |
+
+Distinct from priority (which says *when* in the urgency stack) — a `P3 + backburner` issue is "low priority AND we've decided to actively not work on it yet." Apply alongside the priority, not instead of it.
+
+**When to apply:**
+
+- Body is scoped + clear, but a design call has paused it (e.g. #65 — "this would violate trust > evaluation")
+- Blocked on external context (e.g. #26 — Resend free-tier slot)
+- Deferred until a sibling issue lands and validates the approach
+
+**Difference from related signals:**
+
+- vs `wontfix` — backburner means "not now, maybe later"; `wontfix` means "no, ever." Backburner issues stay open and discoverable.
+- vs `P3` — `P3` is priority; `backburner` is *state* (whether in the queue at all).
+- vs closing the issue — backburner keeps the body + comments + cross-links searchable; closing makes them harder to find later.
+
+**Surface during grooming:**
+
+When reviewing the backlog, treat `backburner` items as muted background. They show up in batch listings but shouldn't be candidates for the next pickup. Only revisit one if the body's "what would need to change" condition is now met.
+
 ### Body-rewrite shape
 
 Use this template when updating a stale body where work has shipped or scope has moved:
