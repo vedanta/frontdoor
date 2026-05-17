@@ -95,29 +95,3 @@ test('A+ increases the computed font-size of body content', async ({ page }) => 
   const afterPx = await textBody.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
   expect(afterPx).toBeGreaterThan(beforePx);
 });
-
-test('scroll-progress bar appears on a scrollable dashboard and tracks scroll', async ({
-  page,
-}) => {
-  // Force a small viewport so the dashboard definitely exceeds visible height
-  await page.setViewportSize({ width: 900, height: 500 });
-  await page.reload();
-  await page.waitForLoadState('networkidle');
-
-  const bar = page.locator('.scroll-progress');
-  await expect(bar).toBeAttached();
-
-  // At top: scaleX(0)
-  await expect(bar).toHaveAttribute('aria-valuenow', '0');
-
-  // Scroll to bottom, give rAF a tick to apply
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await page.waitForFunction(() => {
-    const el = document.querySelector('.scroll-progress');
-    if (!el) return false;
-    return Number(el.getAttribute('aria-valuenow')) >= 95;
-  });
-
-  const after = await bar.getAttribute('aria-valuenow');
-  expect(Number(after)).toBeGreaterThanOrEqual(95);
-});

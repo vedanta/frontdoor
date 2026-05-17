@@ -157,25 +157,6 @@ body::after {
   letter-spacing: 1px;
 }
 
-/* ── Scroll progress bar (#65) ──
-   2px line fixed at the top of the viewport that fills left→right as the
-   user scrolls. transform: scaleX() is the cheap path — GPU-composited,
-   no layout impact. No transition: scroll-driven changes should track 1:1
-   with the scrollbar, not lag behind. */
-.scroll-progress {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background: var(--accent-cyan);
-  opacity: 0.6;
-  transform-origin: 0 0;
-  z-index: 100;
-  pointer-events: none;
-  will-change: transform;
-}
-
 .clock {
   /* button reset — .clock is a <button> (click to toggle 12h/24h, #43) */
   background: transparent;
