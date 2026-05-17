@@ -16,6 +16,13 @@ export type UserRecord = {
   slug: string;
   /** Optional display name; populated when/if the user sets one (post-MVP). */
   name?: string;
+  /**
+   * Optional IANA timezone string (e.g. `'America/New_York'`). Populated when
+   * the user sets one via PUT /api/user (#69). Foundation for future per-user
+   * timezone-aware features (rolling caches at local midnight, scheduled
+   * refresh, etc.); not yet consumed by any data fetcher.
+   */
+  timezone?: string;
   /** ISO 8601 UTC timestamp. */
   createdAt: string;
 };
