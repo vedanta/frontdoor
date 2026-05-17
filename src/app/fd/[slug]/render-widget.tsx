@@ -8,6 +8,13 @@
  * returns `{ data, fetchedAt }`; widgets show a placeholder/caption when
  * data is null, and show the exception-only stale caption (#81b) when
  * fetchedAt is older than today.
+ *
+ * Return shape (#67): `{ element, fetchedAt }`. `fetchedAt` is bubbled up
+ * so `page.tsx` can aggregate the stale-widget count for the StatusBar
+ * (≥ 2 stale → renders a `N widgets stale` chunk) without re-running every
+ * fetcher. Static widgets (`links`, `launcher`, `image source: static`)
+ * return `fetchedAt: null` — they aren't time-anchored, so they never
+ * contribute to the stale count.
  */
 import type { Widget } from '@/lib/config';
 import {
@@ -32,19 +39,25 @@ import { fetchWord } from '@/lib/data/sources/word';
 import type { FetchResult } from '@/lib/data/types';
 import type { ImageItem, TextItem } from '@/lib/data/sources/types';
 
+export type RenderedWidget = {
+  element: React.JSX.Element;
+  /** UTC date (YYYY-MM-DD) of the cache hit; null for static/non-data widgets. */
+  fetchedAt: string | null;
+};
+
 /** Unwrap a FetchResult to `{ data, fetchedAt }`; failure → both null. */
 function unwrap<T>(r: FetchResult<T>): { data: T | null; fetchedAt: string | null } {
   if (r.ok) return { data: r.data, fetchedAt: r.fetchedAt ?? null };
   return { data: null, fetchedAt: null };
 }
 
-export async function renderWidget(widget: Widget): Promise<React.JSX.Element> {
+export async function renderWidget(widget: Widget): Promise<RenderedWidget> {
   switch (widget.type) {
     case 'links':
-      return <LinksWidget widget={widget} />;
+      return { element: <LinksWidget widget={widget} />, fetchedAt: null };
 
     case 'launcher':
-      return <LauncherWidget widget={widget} />;
+      return { element: <LauncherWidget widget={widget} />, fetchedAt: null };
 
     case 'text': {
       let unwrapped: { data: TextItem | null; fetchedAt: string | null } = {
@@ -71,12 +84,17 @@ export async function renderWidget(widget: Widget): Promise<React.JSX.Element> {
           unwrapped = unwrap(await fetchWord());
           break;
       }
-      return <TextWidget widget={widget} data={unwrapped.data} fetchedAt={unwrapped.fetchedAt} />;
+      return {
+        element: (
+          <TextWidget widget={widget} data={unwrapped.data} fetchedAt={unwrapped.fetchedAt} />
+        ),
+        fetchedAt: unwrapped.fetchedAt,
+      };
     }
 
     case 'image': {
       if (widget.source === 'static') {
-        return <ImageWidget widget={widget} />;
+        return { element: <ImageWidget widget={widget} />, fetchedAt: null };
       }
       let unwrapped: { data: ImageItem | null; fetchedAt: string | null } = {
         data: null,
@@ -93,17 +111,28 @@ export async function renderWidget(widget: Widget): Promise<React.JSX.Element> {
           unwrapped = unwrap(await fetchWikimediaPotd());
           break;
       }
-      return <ImageWidget widget={widget} data={unwrapped.data} fetchedAt={unwrapped.fetchedAt} />;
+      return {
+        element: (
+          <ImageWidget widget={widget} data={unwrapped.data} fetchedAt={unwrapped.fetchedAt} />
+        ),
+        fetchedAt: unwrapped.fetchedAt,
+      };
     }
 
     case 'weather': {
       const { data, fetchedAt } = unwrap(await fetchWeather(widget.lat, widget.lon));
-      return <WeatherWidget widget={widget} data={data} fetchedAt={fetchedAt} />;
+      return {
+        element: <WeatherWidget widget={widget} data={data} fetchedAt={fetchedAt} />,
+        fetchedAt,
+      };
     }
 
     case 'headlines': {
       const { data, fetchedAt } = unwrap(await fetchHeadlines(widget.feeds, widget.count));
-      return <HeadlinesWidget widget={widget} data={data} fetchedAt={fetchedAt} />;
+      return {
+        element: <HeadlinesWidget widget={widget} data={data} fetchedAt={fetchedAt} />,
+        fetchedAt,
+      };
     }
   }
 }

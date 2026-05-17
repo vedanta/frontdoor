@@ -186,4 +186,37 @@ describe('DashboardPage', () => {
     const { container } = render(result);
     expect(container.querySelectorAll('.section-divider-title').length).toBe(6);
   });
+
+  it('renders the StatusBar colophon (#67): dev version + day/week + moon + sunset', async () => {
+    mockSession = { userId: 'u_1', slug: 'devdev01' };
+    kvStore.set(configKey('u_1'), DEFAULT_CONFIG);
+    const result = await DashboardPage({ params: Promise.resolve({ slug: 'devdev01' }) });
+    const { container } = render(result);
+
+    const sb = container.querySelector('.statusbar');
+    expect(sb).toBeInTheDocument();
+
+    // NODE_ENV is 'test' under vitest → getVersion() returns 'dev' (no link).
+    expect(sb?.querySelector('a.status-link')).not.toBeInTheDocument();
+    expect(sb?.textContent).toContain('dev');
+
+    // Day-of-year + ISO week pattern (real date — don't pin to a number).
+    expect(sb?.textContent).toMatch(/day \d+ · week \d+/);
+
+    // One of the 8 moon emojis must be present.
+    const moonChars = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'];
+    expect(moonChars.some((c) => sb?.textContent?.includes(c))).toBe(true);
+
+    // Weather mock returns sunrise '2026-05-15T06:00' → '06:00' and
+    // sunset '2026-05-15T19:00' → '19:00'.
+    expect(sb?.textContent).toContain('↑ 06:00');
+    expect(sb?.textContent).toContain('↓ 19:00');
+
+    // Stale chunk hidden — mocks don't carry `fetchedAt`, so all widgets
+    // resolve to null and the count is 0 (< the threshold of 2).
+    expect(sb?.textContent).not.toContain('stale');
+
+    // FontControls embedded.
+    expect(sb?.querySelector('.status-fontsize')).toBeInTheDocument();
+  });
 });

@@ -1,133 +1,95 @@
-'use client';
-
 /**
- * StatusBar — third (and final) MVP client component.
- * Lives at the bottom of the shell on every page.
+ * StatusBar — the dashboard's colophon strip (#67 redesign).
  *
- * - Uptime: session minutes since the component mounted, refreshed every 60s.
- * - Storage: navigator.storage.estimate() (MB used), polled with uptime.
- * - Font controls: A− / A+ buttons that step --page-font-size through
- *   {11, 13, 15, 17} px and persist via localStorage.
+ * Server component as of v0.1.0. Every label is computable at page-render
+ * time; the only interactive bit (font A−/A+) is delegated to the
+ * `<FontControls/>` client child.
  *
- * Hydration-safe: numeric labels start blank until the first effect tick
- * fills them in (no SSR/CSR mismatch).
+ * Items (left → right):
+ *   v0.1.0   🌒 ↑ 05:42 ↓ 20:14   day 137 · week 20   [N widgets stale]   A− 13px A+
+ *      ↑              ↑                  ↑                    ↑
+ *   linked     moon emoji +       ISO 8601 week           only when N ≥ 2
+ *   release    sunrise + sunset   + day-of-year            (per-widget #81 caption
+ *   notes      (both omit if no                             covers the single case)
+ *              weather widget
+ *              configured)
  *
- * The flash-of-default-font-size on initial paint is avoided by an inline
- * script in src/app/layout.tsx that reads localStorage BEFORE React boots.
+ * The arrival-zone trust contract (`design/02` per #76) doesn't apply here:
+ * this lives at the absolute bottom of `.shell`, in natural document flow,
+ * so it's only encountered during departure. See memory:
+ * `departure-zone-status-bar` for the principle refinement that justifies
+ * the colophon-style content here vs. the rejected always-on per-widget
+ * pattern in #66.
  */
-import { useEffect, useState } from 'react';
+import type { VersionLabel, MoonPhase } from '@/lib/colophon';
+import { FontControls } from './FontControls';
 
-// 4-step discrete scale; 13 is the design default.
-export const FONT_SIZES = [11, 13, 15, 17] as const;
-type FontSize = (typeof FONT_SIZES)[number];
+// Threshold for showing the aggregate-stale chunk. `1` is already covered
+// by the per-widget StaleCaption (#81); aggregate adds value only when a
+// pattern is forming — i.e. ≥ 2 widgets simultaneously falling back.
+const STALE_THRESHOLD = 2;
 
-const DEFAULT_FONT_SIZE: FontSize = 13;
-const STORAGE_KEY = 'frontdoor.fontSize';
+export type StatusBarProps = {
+  version: VersionLabel;
+  moonPhase: MoonPhase;
+  /** HH:MM, e.g. `'05:42'`. Null when no weather widget is configured. */
+  sunriseTime: string | null;
+  /** HH:MM, e.g. `'20:14'`. Null when no weather widget is configured. */
+  sunsetTime: string | null;
+  dayOfYear: number;
+  weekOfYear: number;
+  /** Count of widgets whose data was served from a previous-day cache. */
+  staleCount: number;
+};
 
-function readStoredFontSize(): FontSize {
-  if (typeof window === 'undefined') return DEFAULT_FONT_SIZE;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_FONT_SIZE;
-    const n = parseInt(raw, 10);
-    return (FONT_SIZES as readonly number[]).includes(n) ? (n as FontSize) : DEFAULT_FONT_SIZE;
-  } catch {
-    return DEFAULT_FONT_SIZE;
-  }
-}
-
-function applyFontSize(size: FontSize): void {
-  if (typeof document === 'undefined') return;
-  document.documentElement.style.setProperty('--page-font-size', `${size}px`);
-  try {
-    window.localStorage.setItem(STORAGE_KEY, String(size));
-  } catch {
-    /* localStorage may be disabled; fall through silently */
-  }
-}
-
-export function StatusBar() {
-  const [view, setView] = useState<{ uptimeMin: number; storageMb: number | null } | null>(null);
-  const [fontSize, setFontSize] = useState<FontSize>(DEFAULT_FONT_SIZE);
-
-  // Initial fill + 60s uptime/storage interval. Defer via setTimeout(0) to keep
-  // setState out of the effect body (Next 16 lint rule — same as <Clock/>).
-  useEffect(() => {
-    const bootTime = Date.now();
-    const tick = async () => {
-      const uptimeMin = Math.floor((Date.now() - bootTime) / 60_000);
-      let storageMb: number | null = null;
-      if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
-        try {
-          const est = await navigator.storage.estimate();
-          if (typeof est.usage === 'number') {
-            storageMb = Math.round((est.usage / 1_048_576) * 10) / 10;
-          }
-        } catch {
-          /* swallow */
-        }
-      }
-      setView({ uptimeMin, storageMb });
-    };
-    const initial = setTimeout(tick, 0);
-    const id = setInterval(tick, 60_000);
-    return () => {
-      clearTimeout(initial);
-      clearInterval(id);
-    };
-  }, []);
-
-  // Hydrate font size from localStorage (the inline script in layout.tsx already
-  // applied the visual change; this just syncs React state for the controls).
-  // Defer to setTimeout(0) so setState lands in a callback, not the effect body
-  // (Next 16 lint rule — same pattern as <Clock/>'s initial fill).
-  useEffect(() => {
-    const t = setTimeout(() => setFontSize(readStoredFontSize()), 0);
-    return () => clearTimeout(t);
-  }, []);
-
-  const idx = FONT_SIZES.indexOf(fontSize);
-  const canSmaller = idx > 0;
-  const canBigger = idx < FONT_SIZES.length - 1;
-
-  const change = (delta: -1 | 1) => {
-    const next = FONT_SIZES[idx + delta];
-    if (next === undefined) return;
-    setFontSize(next);
-    applyFontSize(next);
-  };
-
+export function StatusBar({
+  version,
+  moonPhase,
+  sunriseTime,
+  sunsetTime,
+  dayOfYear,
+  weekOfYear,
+  staleCount,
+}: StatusBarProps) {
   return (
     <div className="statusbar">
       <div className="status-item">
-        <span className="status-dot" />
-        <span>session {view ? `${view.uptimeMin}m` : '—'}</span>
+        {version.href ? (
+          <a
+            href={version.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="status-link"
+            title={`release notes for ${version.label}`}
+          >
+            {version.label}
+          </a>
+        ) : (
+          <span>{version.label}</span>
+        )}
       </div>
+
+      <div className="status-item" title={moonPhase.name}>
+        <span className="status-moon" aria-label={moonPhase.name}>
+          {moonPhase.emoji}
+        </span>
+        {sunriseTime !== null && <span>↑ {sunriseTime}</span>}
+        {sunsetTime !== null && <span>↓ {sunsetTime}</span>}
+      </div>
+
       <div className="status-item">
         <span>
-          storage{' '}
-          {view?.storageMb !== null && view?.storageMb !== undefined ? `${view.storageMb}mb` : '—'}
+          day {dayOfYear} · week {weekOfYear}
         </span>
       </div>
-      <div className="status-fontsize" aria-label="page font size">
-        <button
-          type="button"
-          onClick={() => change(-1)}
-          disabled={!canSmaller}
-          aria-label="smaller font"
-        >
-          A−
-        </button>
-        <span className="status-fontsize-current">{fontSize}px</span>
-        <button
-          type="button"
-          onClick={() => change(1)}
-          disabled={!canBigger}
-          aria-label="bigger font"
-        >
-          A+
-        </button>
-      </div>
+
+      {staleCount >= STALE_THRESHOLD && (
+        <div className="status-item status-item--stale">
+          <span>{staleCount} widgets stale</span>
+        </div>
+      )}
+
+      <FontControls />
     </div>
   );
 }

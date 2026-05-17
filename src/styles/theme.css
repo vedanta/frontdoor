@@ -350,12 +350,28 @@ body::after {
   gap: 6px;
 }
 
-.status-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent-green);
-  opacity: 0.7;
+/* ── Status bar colophon (#67) ── */
+.status-link {
+  color: var(--text-dim);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.status-link:hover {
+  color: var(--accent-cyan);
+}
+
+/* Emoji at 10px is visually shrunk; bump to 13px so the moon is legible
+   without disturbing the surrounding monospace metrics. */
+.status-moon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* Aggregate-stale chunk: quietly differentiated, never alarming.
+   Same hue as the per-widget StaleCaption (#81) for visual continuity. */
+.status-item--stale {
+  color: var(--text-dimmer, var(--text-dim));
+  opacity: 0.75;
 }
 
 /* ── Responsive ── */
