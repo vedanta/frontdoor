@@ -50,6 +50,11 @@ yarn-error.log*
 CLAUDE.md
 CLAUDE.local.md
 
-# === Unclassified — origin TBD, monitoring ===
+# === Local scratch / reference (not part of the project) ===
+# .cache/ — fd.sh dev server PID + log
+# .tmp/   — local-only reference scripts (e.g. .tmp/liway.sh)
 .cache/
+.tmp/
+
+# === Unclassified — origin TBD, monitoring ===
 .env*.local
