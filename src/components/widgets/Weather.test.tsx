@@ -51,4 +51,18 @@ describe('WeatherWidget', () => {
     render(<WeatherWidget widget={widget} data={null} />);
     expect(screen.getByText('could not load')).toBeInTheDocument();
   });
+
+  it('does NOT render stale caption when fetchedAt is today (#81c)', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const { container } = render(<WeatherWidget widget={widget} data={data} fetchedAt={today} />);
+    expect(container.querySelector('.stale-caption')).not.toBeInTheDocument();
+  });
+
+  it('renders stale caption when fetchedAt is older than today (#81c)', () => {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const { container } = render(
+      <WeatherWidget widget={widget} data={data} fetchedAt={yesterday} />,
+    );
+    expect(container.querySelector('.stale-caption')?.textContent).toBe('─ yesterday');
+  });
 });
