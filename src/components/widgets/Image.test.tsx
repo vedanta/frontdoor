@@ -56,8 +56,15 @@ describe('ImageWidget', () => {
     );
   });
 
-  it('shows "could not load" for a daily source with null data', () => {
-    render(<ImageWidget widget={dailyWidget} data={null} />);
-    expect(screen.getByText('could not load')).toBeInTheDocument();
+  it('shows the calm placeholder SVG for a daily source with null data (#81)', () => {
+    const { container } = render(<ImageWidget widget={dailyWidget} data={null} />);
+    // The placeholder uses an empty alt + data-testid for the SVG image
+    const placeholder = container.querySelector('[data-testid="image-widget-placeholder"]');
+    expect(placeholder).toBeInTheDocument();
+    expect(placeholder?.getAttribute('src')).toBe('/placeholders/widget-fallback.svg');
+    // No "could not load" text — replaced by the calm placeholder
+    expect(screen.queryByText('could not load')).not.toBeInTheDocument();
+    // The wrapper carries the modifier class so CSS can tune the placeholder variant
+    expect(container.querySelector('.image-widget--placeholder')).toBeInTheDocument();
   });
 });

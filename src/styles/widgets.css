@@ -30,6 +30,19 @@
   opacity: 1;
 }
 
+/* Placeholder variant (#81) — used on total fetch failure.
+   The SVG is already low-opacity strokes; this modifier keeps it from
+   picking up the hover-brighten that real images get (there's nothing
+   interactive to reward), and locks the aspect ratio so the panel
+   doesn't collapse around the SVG's intrinsic size. */
+.image-widget--placeholder img {
+  opacity: 1;
+  aspect-ratio: 3 / 2;
+}
+.image-widget--placeholder:hover img {
+  opacity: 1;
+}
+
 .image-caption {
   margin-top: 8px;
   line-height: 1.4;
