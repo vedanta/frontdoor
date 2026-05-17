@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+  <!--
+    Image-widget fallback placeholder (#81 — chosen variant C).
+
+    A still landscape: crescent moon + two stars + a soft horizon silhouette.
+    Calm by design — nothing for the eye to evaluate, no anchor (no ground
+    line), no warm accents. Stand-in for missing image content; preserves
+    visual rhythm without reading as an "error state".
+
+    Color choices via theme variables (frontdoor's --text-secondary +
+    --text-dim) at low opacity. Stroke-only (no fills) for "ink line" feel.
+  -->
+
+  <!-- crescent moon — arc opening right; sliver of "quiet observation" -->
+  <path d="M 225 47 A 14 14 0 0 0 225 73"
+        fill="none" stroke="rgba(132, 148, 167, 0.6)"
+        stroke-width="1.3" stroke-linecap="round"/>
+
+  <!-- two stars — minimum needed to signal "sky" without becoming pattern -->
+  <circle cx="100" cy="55" r="0.8" fill="rgba(132, 148, 167, 0.5)"/>
+  <circle cx="170" cy="80" r="0.6" fill="rgba(132, 148, 167, 0.4)"/>
+
+  <!-- horizon silhouette — sweeping curve, no ground line (would over-anchor) -->
+  <path d="M 0 145 Q 60 115, 110 132 T 220 128 T 300 138"
+        fill="none" stroke="rgba(86, 104, 125, 0.6)" stroke-width="1.2"/>
+</svg>

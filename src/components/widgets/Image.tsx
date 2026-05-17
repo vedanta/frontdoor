@@ -3,12 +3,16 @@
  * fetcher (nasa-apod, bing-daily, wikimedia-potd) OR the inline fields of a
  * `source: 'static'` widget config.
  *
+ * On total failure (data === null AND no static fallback) renders a calm
+ * placeholder SVG instead of the plain-text "could not load" — preserves
+ * the dashboard's visual rhythm without reading as an error state.
+ * Per #81 → variant C (crescent + spare).
+ *
  * Per design/03-widget-specs.md → `image`.
  */
 import type { ImageWidget as ImageWidgetConfig } from '@/lib/config';
 import type { ImageItem } from '@/lib/data/sources/types';
 import { Panel } from './Panel';
-import { CouldNotLoad } from './CouldNotLoad';
 
 type Props = {
   widget: ImageWidgetConfig;
@@ -35,7 +39,16 @@ export function ImageWidget({ widget, data }: Props) {
   return (
     <Panel color={widget.color} span={widget.span} icon={widget.icon} title={widget.title}>
       {!item ? (
-        <CouldNotLoad />
+        <div className="image-widget image-widget--placeholder">
+          {/* eslint-disable-next-line @next/next/no-img-element -- static placeholder asset; next/image not needed */}
+          <img
+            src="/placeholders/widget-fallback.svg"
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            data-testid="image-widget-placeholder"
+          />
+        </div>
       ) : (
         <>
           <div className="image-widget">
