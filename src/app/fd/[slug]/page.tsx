@@ -8,7 +8,17 @@
  *      with awaited data (renderWidget dispatches to the right fetcher).
  *      All widget data is fetched in parallel via Promise.all — the slowest
  *      widget gates the page, not the sum of fetches.
- *   4. ISR: page is cached and revalidated daily (#25 triggers on-demand
+ *   4. Compute the StatusBar colophon (#67) from already-fetched data:
+ *      - version: build-time package.json
+ *      - day/week/moon: pure date math
+ *      - sunset: looked up from the first weather widget's cached data
+ *        (the fetch is KV-cached, so this is a second cache read, not a
+ *        second upstream call)
+ *      - aggregate-stale count: walks the fetchedAt values bubbled up by
+ *        renderWidget; rendered only when ≥ 2 widgets fall back to a
+ *        previous-day cache (the single-widget case is covered by the
+ *        per-widget StaleCaption #81)
+ *   5. ISR: page is cached and revalidated daily (#25 triggers on-demand
  *      revalidation via the cron at 03:00 UTC, after /api/refresh warms KV).
  */
 import { notFound } from 'next/navigation';
@@ -20,6 +30,15 @@ import { Clock } from '@/components/Clock';
 import { StatusBar } from '@/components/StatusBar';
 import { SearchBar, buildShortcuts } from '@/components/search';
 import { SectionDivider } from '@/components/widgets';
+import {
+  countStaleWidgets,
+  dayOfYear,
+  formatSunsetTime,
+  getVersion,
+  moonPhase,
+  weekOfYear,
+} from '@/lib/colophon';
+import { fetchWeather } from '@/lib/data/sources/weather';
 import { renderWidget } from './render-widget';
 
 // ISR — 24h fallback. /api/revalidate (cron + on-edit) overrides this.
@@ -54,6 +73,27 @@ export default async function DashboardPage({ params }: Props) {
     })),
   );
 
+  // ── StatusBar inputs (#67) ──────────────────────────────────────────
+  const today = new Date();
+  const todayUtc = today.toISOString().slice(0, 10);
+
+  // Walk every rendered widget's `fetchedAt` and count those served from a
+  // pre-today cache. Static widgets (links, launcher, image-static) carry
+  // `null` and are skipped by `countStaleWidgets`.
+  const fetchedAts = renderedSections.flatMap((s) => s.widgets.map((w) => w.fetchedAt));
+  const staleCount = countStaleWidgets(fetchedAts, todayUtc);
+
+  // Sunset: pull from the first weather widget the user has configured. The
+  // widget render already invoked `fetchWeather` (KV-cached); this second
+  // call hits the same cache envelope — one extra KV read, no upstream HTTP.
+  // Omitted from the statusbar when no weather widget is configured.
+  let sunsetTime: string | null = null;
+  const firstWeather = config.sections.flatMap((s) => s.widgets).find((w) => w.type === 'weather');
+  if (firstWeather && firstWeather.type === 'weather') {
+    const r = await fetchWeather(firstWeather.lat, firstWeather.lon);
+    if (r.ok) sunsetTime = formatSunsetTime(r.data.today.sunset);
+  }
+
   return (
     <>
       <div className="grid-dots" />
@@ -78,13 +118,20 @@ export default async function DashboardPage({ params }: Props) {
             <Fragment key={section.id}>
               <SectionDivider id={section.id} title={section.title} subtitle={section.subtitle} />
               {widgets.map((w, i) => (
-                <Fragment key={`${section.id}-${i}`}>{w}</Fragment>
+                <Fragment key={`${section.id}-${i}`}>{w.element}</Fragment>
               ))}
             </Fragment>
           ))}
         </div>
 
-        <StatusBar />
+        <StatusBar
+          version={getVersion()}
+          moonPhase={moonPhase(today)}
+          sunsetTime={sunsetTime}
+          dayOfYear={dayOfYear(today)}
+          weekOfYear={weekOfYear(today)}
+          staleCount={staleCount}
+        />
       </div>
     </>
   );
