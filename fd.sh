@@ -103,22 +103,37 @@ dim()  { printf "%s%s%s"          "$C_DIM"    "$*"       "$C_RESET"; }
 _section() { printf "  %s%s%s  %s%s%s\n" "$C_BOLD" "$1" "$C_RESET" "$C_DIM" "$2" "$C_RESET"; }
 _action()  { printf "    %s%-32s%s%s\n"  "$C_CYAN" "$1" "$C_RESET" "$2"; }
 
-show_help() {
-  echo ""
-  echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<env>${C_RESET} ${C_CYAN}<subgroup>${C_RESET} <action> [args]"
-  echo ""
+# show_help_prod / show_help_local print one env section each (no overall
+# header). Used by both the top-level show_help (which wraps them in the
+# `fd CLI — ...` banner) AND by per-env dispatchers handling the `help`
+# action (./fd.sh prod help, ./fd.sh local help).
+show_help_prod() {
   _section "Production" "($FD_PROD_BASE_URL · cache refresh runs daily 03:00 UTC)"
   _action "user signup <email>"       "Email yourself a signup link"
   _action "cache refresh"             "Warm data + revalidate pages (= /api/refresh)"
   _action "cache revalidate [userId]" "Revalidate page ISR only"
-  echo ""
-  _section "Local" "($FD_LOCAL_BASE_URL · prod's user/cache actions mirror here)"
+}
+
+show_help_local() {
+  _section "Local" "($FD_LOCAL_BASE_URL · no schedule)"
   _action "server start"              "Start \`pnpm dev\` (background, PID tracked)"
   _action "server stop"               "Stop gracefully (SIGTERM)"
   _action "server restart"            "Stop + start"
   _action "server kill"               "Force-kill (SIGKILL + clear port)"
   _action "server status"             "PID, uptime, URL, log path"
   _action "server logs"               "tail -f the dev log"
+  _action "user signup <email>"       "Email yourself a signup link (against dev)"
+  _action "cache refresh"             "Warm data + revalidate pages (against dev)"
+  _action "cache revalidate [userId]" "Revalidate page ISR only (against dev)"
+}
+
+show_help() {
+  echo ""
+  echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<env>${C_RESET} ${C_CYAN}<subgroup>${C_RESET} <action> [args]"
+  echo ""
+  show_help_prod
+  echo ""
+  show_help_local
   echo ""
 }
 
@@ -583,18 +598,35 @@ local_server_logs() {
 # ── Sub-dispatchers (subgroup → action) ────────────────────────────────────
 # One per (env, subgroup) — list available actions on bad input.
 
+# _subgroup_help <env+subgroup label> <action> <description> [more action/desc pairs...]
+# Print the focused "./fd.sh prod user help" / "./fd.sh local server help"
+# style help — a small section header + the action list. Used by
+# sub-dispatchers below.
+_subgroup_help() {
+  local label="$1"; shift
+  echo ""
+  echo -e "  ${C_BOLD}${label}${C_RESET}"
+  while [[ $# -ge 2 ]]; do
+    _action "$1" "$2"
+    shift 2
+  done
+  echo ""
+}
+
 prod_user_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
     err "prod user: missing action"
-    echo "    available: signup" >&2
+    echo "    available: signup, help" >&2
     exit 64
   fi
   shift
   case "$action" in
     signup) prod_user_signup "$@" ;;
+    help)   _subgroup_help "prod user" \
+              "signup <email>" "Email yourself a signup link" ;;
     *) err "unknown prod user action: $action"
-       echo "    available: signup" >&2
+       echo "    available: signup, help" >&2
        exit 64 ;;
   esac
 }
@@ -603,15 +635,18 @@ prod_cache_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
     err "prod cache: missing action"
-    echo "    available: refresh, revalidate" >&2
+    echo "    available: refresh, revalidate, help" >&2
     exit 64
   fi
   shift
   case "$action" in
     refresh)      prod_cache_refresh "$@" ;;
     revalidate)   prod_cache_revalidate "$@" ;;
+    help)         _subgroup_help "prod cache" \
+                    "refresh"             "Warm data + revalidate pages (= /api/refresh)" \
+                    "revalidate [userId]" "Revalidate page ISR only" ;;
     *) err "unknown prod cache action: $action"
-       echo "    available: refresh, revalidate" >&2
+       echo "    available: refresh, revalidate, help" >&2
        exit 64 ;;
   esac
 }
@@ -620,14 +655,16 @@ local_user_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
     err "local user: missing action"
-    echo "    available: signup" >&2
+    echo "    available: signup, help" >&2
     exit 64
   fi
   shift
   case "$action" in
     signup) local_user_signup "$@" ;;
+    help)   _subgroup_help "local user" \
+              "signup <email>" "Email yourself a signup link (against dev)" ;;
     *) err "unknown local user action: $action"
-       echo "    available: signup" >&2
+       echo "    available: signup, help" >&2
        exit 64 ;;
   esac
 }
@@ -636,15 +673,18 @@ local_cache_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
     err "local cache: missing action"
-    echo "    available: refresh, revalidate" >&2
+    echo "    available: refresh, revalidate, help" >&2
     exit 64
   fi
   shift
   case "$action" in
     refresh)      local_cache_refresh "$@" ;;
     revalidate)   local_cache_revalidate "$@" ;;
+    help)         _subgroup_help "local cache" \
+                    "refresh"             "Warm data + revalidate pages (against dev)" \
+                    "revalidate [userId]" "Revalidate page ISR only (against dev)" ;;
     *) err "unknown local cache action: $action"
-       echo "    available: refresh, revalidate" >&2
+       echo "    available: refresh, revalidate, help" >&2
        exit 64 ;;
   esac
 }
@@ -653,7 +693,7 @@ local_server_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
     err "local server: missing action"
-    echo "    available: start, stop, restart, kill, status, logs" >&2
+    echo "    available: start, stop, restart, kill, status, logs, help" >&2
     exit 64
   fi
   shift
@@ -664,8 +704,15 @@ local_server_dispatch() {
     kill)    local_server_kill "$@" ;;
     status)  local_server_status "$@" ;;
     logs)    local_server_logs "$@" ;;
+    help)    _subgroup_help "local server" \
+               "start"   "Start \`pnpm dev\` (background, PID tracked)" \
+               "stop"    "Stop gracefully (SIGTERM)" \
+               "restart" "Stop + start" \
+               "kill"    "Force-kill (SIGKILL + clear port)" \
+               "status"  "PID, uptime, URL, log path" \
+               "logs"    "tail -f the dev log" ;;
     *) err "unknown local server action: $action"
-       echo "    available: start, stop, restart, kill, status, logs" >&2
+       echo "    available: start, stop, restart, kill, status, logs, help" >&2
        exit 64 ;;
   esac
 }
@@ -676,15 +723,16 @@ prod_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "prod: missing subgroup"
-    echo "    available: user, cache" >&2
+    echo "    available: user, cache, help" >&2
     exit 64
   fi
   shift
   case "$sub" in
-    user) prod_user_dispatch "$@" ;;
+    user)  prod_user_dispatch "$@" ;;
     cache) prod_cache_dispatch "$@" ;;
+    help)  echo ""; show_help_prod; echo "" ;;
     *) err "unknown prod subgroup: $sub"
-       echo "    available: user, cache" >&2
+       echo "    available: user, cache, help" >&2
        exit 64 ;;
   esac
 }
@@ -693,7 +741,7 @@ local_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "local: missing subgroup"
-    echo "    available: server, user, cache" >&2
+    echo "    available: server, user, cache, help" >&2
     exit 64
   fi
   shift
@@ -701,8 +749,9 @@ local_dispatch() {
     server) local_server_dispatch "$@" ;;
     user)   local_user_dispatch "$@" ;;
     cache)  local_cache_dispatch "$@" ;;
+    help)   echo ""; show_help_local; echo "" ;;
     *) err "unknown local subgroup: $sub"
-       echo "    available: server, user, cache" >&2
+       echo "    available: server, user, cache, help" >&2
        exit 64 ;;
   esac
 }
