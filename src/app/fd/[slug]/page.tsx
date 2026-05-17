@@ -33,7 +33,7 @@ import { SectionDivider } from '@/components/widgets';
 import {
   countStaleWidgets,
   dayOfYear,
-  formatSunsetTime,
+  extractHhmm,
   getVersion,
   moonPhase,
   weekOfYear,
@@ -83,15 +83,22 @@ export default async function DashboardPage({ params }: Props) {
   const fetchedAts = renderedSections.flatMap((s) => s.widgets.map((w) => w.fetchedAt));
   const staleCount = countStaleWidgets(fetchedAts, todayUtc);
 
-  // Sunset: pull from the first weather widget the user has configured. The
-  // widget render already invoked `fetchWeather` (KV-cached); this second
-  // call hits the same cache envelope — one extra KV read, no upstream HTTP.
-  // Omitted from the statusbar when no weather widget is configured.
+  // Sunrise + sunset: pull from the first weather widget the user has
+  // configured. The widget render already invoked `fetchWeather` (KV-cached);
+  // this second call hits the same cache envelope — one extra KV read, no
+  // upstream HTTP. Both omitted from the statusbar when no weather widget
+  // is configured. Showing both gives a complete day-arc and supports the
+  // departure-zone's "subtle next-day planning" function — see memory:
+  // `departure-zone-status-bar`.
+  let sunriseTime: string | null = null;
   let sunsetTime: string | null = null;
   const firstWeather = config.sections.flatMap((s) => s.widgets).find((w) => w.type === 'weather');
   if (firstWeather && firstWeather.type === 'weather') {
     const r = await fetchWeather(firstWeather.lat, firstWeather.lon);
-    if (r.ok) sunsetTime = formatSunsetTime(r.data.today.sunset);
+    if (r.ok) {
+      sunriseTime = extractHhmm(r.data.today.sunrise);
+      sunsetTime = extractHhmm(r.data.today.sunset);
+    }
   }
 
   return (
@@ -127,6 +134,7 @@ export default async function DashboardPage({ params }: Props) {
         <StatusBar
           version={getVersion()}
           moonPhase={moonPhase(today)}
+          sunriseTime={sunriseTime}
           sunsetTime={sunsetTime}
           dayOfYear={dayOfYear(today)}
           weekOfYear={weekOfYear(today)}

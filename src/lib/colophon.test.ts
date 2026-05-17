@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   countStaleWidgets,
   dayOfYear,
-  formatSunsetTime,
+  extractHhmm,
   getVersion,
   moonPhase,
   weekOfYear,
@@ -100,24 +100,28 @@ describe('moonPhase', () => {
   });
 });
 
-describe('formatSunsetTime', () => {
-  it('extracts HH:MM from a weather API timestamp', () => {
-    expect(formatSunsetTime('2026-05-15T20:09')).toBe('20:09');
+describe('extractHhmm', () => {
+  it('extracts HH:MM from a weather API timestamp (sunset)', () => {
+    expect(extractHhmm('2026-05-15T20:09')).toBe('20:09');
+  });
+
+  it('extracts HH:MM from a weather API timestamp (sunrise)', () => {
+    expect(extractHhmm('2026-05-15T05:42')).toBe('05:42');
   });
 
   it('handles full ISO with seconds', () => {
-    expect(formatSunsetTime('2026-05-15T20:09:33')).toBe('20:09');
+    expect(extractHhmm('2026-05-15T20:09:33')).toBe('20:09');
   });
 
   it('returns null for null/undefined/empty input', () => {
-    expect(formatSunsetTime(null)).toBeNull();
-    expect(formatSunsetTime(undefined)).toBeNull();
-    expect(formatSunsetTime('')).toBeNull();
+    expect(extractHhmm(null)).toBeNull();
+    expect(extractHhmm(undefined)).toBeNull();
+    expect(extractHhmm('')).toBeNull();
   });
 
   it('returns null for malformed input', () => {
-    expect(formatSunsetTime('not-a-time')).toBeNull();
-    expect(formatSunsetTime('2026-05-15')).toBeNull(); // no T component
+    expect(extractHhmm('not-a-time')).toBeNull();
+    expect(extractHhmm('2026-05-15')).toBeNull(); // no T component
   });
 });
 

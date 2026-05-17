@@ -9,6 +9,7 @@ const baseProps: StatusBarProps = {
     href: 'https://github.com/vedanta/frontdoor/releases/tag/v0.1.0',
   },
   moonPhase: { emoji: '🌒', name: 'waxing crescent' },
+  sunriseTime: '05:42',
   sunsetTime: '20:14',
   dayOfYear: 137,
   weekOfYear: 20,
@@ -33,15 +34,26 @@ describe('StatusBar (server component)', () => {
     expect(container.textContent).toContain('dev');
   });
 
-  it('renders moon emoji + sunset glyph + HH:MM', () => {
+  it('renders moon + sunrise + sunset chronologically (↑ before ↓)', () => {
     const { container } = render(<StatusBar {...baseProps} />);
     expect(container.textContent).toContain('🌒');
+    expect(container.textContent).toContain('↑ 05:42');
     expect(container.textContent).toContain('↓ 20:14');
+    // Order check: sunrise glyph index should precede sunset glyph index.
+    const text = container.textContent ?? '';
+    expect(text.indexOf('↑')).toBeLessThan(text.indexOf('↓'));
   });
 
-  it('omits the sunset chunk when sunsetTime is null', () => {
-    const { container } = render(<StatusBar {...baseProps} sunsetTime={null} />);
+  it('omits both sunrise and sunset when no weather widget is configured', () => {
+    const { container } = render(<StatusBar {...baseProps} sunriseTime={null} sunsetTime={null} />);
     expect(container.textContent).toContain('🌒');
+    expect(container.textContent).not.toContain('↑');
+    expect(container.textContent).not.toContain('↓');
+  });
+
+  it('renders sunrise only when only sunsetTime is null (defensive)', () => {
+    const { container } = render(<StatusBar {...baseProps} sunsetTime={null} />);
+    expect(container.textContent).toContain('↑ 05:42');
     expect(container.textContent).not.toContain('↓');
   });
 

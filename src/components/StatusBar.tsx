@@ -6,13 +6,13 @@
  * `<FontControls/>` client child.
  *
  * Items (left → right):
- *   v0.1.0   🌒 ↓ 20:14   day 137 · week 20   [N widgets stale]   A− 13px A+
- *      ↑          ↑              ↑                    ↑
- *   linked    moon emoji +   ISO 8601 week         only when N ≥ 2
- *   release   sunset HH:MM   + day-of-year          (per-widget #81 caption
- *   notes     (sunset omits                          covers the single case)
- *             if no weather
- *             widget configured)
+ *   v0.1.0   🌒 ↑ 05:42 ↓ 20:14   day 137 · week 20   [N widgets stale]   A− 13px A+
+ *      ↑              ↑                  ↑                    ↑
+ *   linked     moon emoji +       ISO 8601 week           only when N ≥ 2
+ *   release    sunrise + sunset   + day-of-year            (per-widget #81 caption
+ *   notes      (both omit if no                             covers the single case)
+ *              weather widget
+ *              configured)
  *
  * The arrival-zone trust contract (`design/02` per #76) doesn't apply here:
  * this lives at the absolute bottom of `.shell`, in natural document flow,
@@ -32,6 +32,8 @@ const STALE_THRESHOLD = 2;
 export type StatusBarProps = {
   version: VersionLabel;
   moonPhase: MoonPhase;
+  /** HH:MM, e.g. `'05:42'`. Null when no weather widget is configured. */
+  sunriseTime: string | null;
   /** HH:MM, e.g. `'20:14'`. Null when no weather widget is configured. */
   sunsetTime: string | null;
   dayOfYear: number;
@@ -43,6 +45,7 @@ export type StatusBarProps = {
 export function StatusBar({
   version,
   moonPhase,
+  sunriseTime,
   sunsetTime,
   dayOfYear,
   weekOfYear,
@@ -70,6 +73,7 @@ export function StatusBar({
         <span className="status-moon" aria-label={moonPhase.name}>
           {moonPhase.emoji}
         </span>
+        {sunriseTime !== null && <span>↑ {sunriseTime}</span>}
         {sunsetTime !== null && <span>↓ {sunsetTime}</span>}
       </div>
 

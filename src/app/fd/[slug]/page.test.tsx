@@ -207,7 +207,9 @@ describe('DashboardPage', () => {
     const moonChars = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'];
     expect(moonChars.some((c) => sb?.textContent?.includes(c))).toBe(true);
 
-    // Weather mock returns sunset '2026-05-15T19:00' → '19:00'.
+    // Weather mock returns sunrise '2026-05-15T06:00' → '06:00' and
+    // sunset '2026-05-15T19:00' → '19:00'.
+    expect(sb?.textContent).toContain('↑ 06:00');
     expect(sb?.textContent).toContain('↓ 19:00');
 
     // Stale chunk hidden — mocks don't carry `fetchedAt`, so all widgets

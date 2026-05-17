@@ -101,14 +101,14 @@ export function moonPhase(date: Date): MoonPhase {
   return PHASES[idx];
 }
 
-// ── Sunset formatter ────────────────────────────────────────────────────
+// ── Time formatter ──────────────────────────────────────────────────────
 
 /**
  * Extract HH:MM from a weather API datetime like `'2026-05-15T20:09'`.
- * Returns `null` if the input doesn't match — caller decides whether to
- * omit the sunset chunk from the statusbar entirely.
+ * Used for both sunrise and sunset in the statusbar. Returns `null` if the
+ * input doesn't match — caller decides whether to omit that chunk entirely.
  */
-export function formatSunsetTime(iso: string | null | undefined): string | null {
+export function extractHhmm(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const m = iso.match(/T(\d{2}:\d{2})/);
   return m ? m[1] : null;
