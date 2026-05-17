@@ -76,48 +76,19 @@ dim()  { printf "%s%s%s" "$C_DIM" "$*" "$C_RESET"; }
 # _h "<command>" "<description>" — column-aligned help row.
 _h() { printf "  %s%-32s%s  %s\n" "$C_BOLD" "$1" "$C_RESET" "$2"; }
 
-# _ex "<example command>" "<side-comment>" — renders an example with an
-# aligned trailing comment in dim. Width matches `_h` for visual continuity.
-_ex() { printf "  %-44s %s%s%s\n" "$1" "$C_DIM" "# $2" "$C_RESET"; }
-
 show_help() {
   cat <<EOF
-${C_BOLD}fd.sh${C_RESET} — frontdoor ops CLI
+${C_BOLD}fd.sh${C_RESET} — frontdoor ops
 
-${C_BOLD}USAGE${C_RESET}
-  ./fd.sh [global-opts] <group> <action> [args]
-
-${C_BOLD}COMMANDS${C_RESET}
 EOF
-  _h "user signup <email>"        "Email yourself a signup link — POST /api/keys"
+  _h "user signup <email>"        "Email yourself a signup link"
+  _h "prod cron-exec"             "Trigger the daily cron"
+  _h "prod page-refresh [userId]" "Force dashboards to re-render"
   cat <<EOF
 
-  ${C_DIM}── prod ops ──${C_RESET} ${C_DIM}(need PROD_CRON_SECRET in .env.local; always target prod)${C_RESET}
+  ${C_DIM}e.g.${C_RESET}  ./fd.sh user signup you@example.com
+        ./fd.sh --local user signup you@example.com   ${C_DIM}# target dev${C_RESET}
 EOF
-  _h "prod cron-exec"             "Run the daily cron now — POST /api/refresh"
-  _h "prod page-refresh [userId]" "Bust ISR cache (all users, or one) — POST /api/revalidate"
-  cat <<EOF
-
-${C_BOLD}OPTIONS${C_RESET} ${C_DIM}(apply to user commands; prod ignores --url / --local)${C_RESET}
-EOF
-  _h "--local"                    "Target local dev (http://localhost:3000)"
-  _h "--url <url>"                "Target a specific base URL"
-  _h "-h, --help"                 "Show this help"
-  cat <<EOF
-
-${C_BOLD}ENVIRONMENT${C_RESET}
-EOF
-  _h "FD_BASE_URL"                "Override default URL (default: $DEFAULT_BASE_URL)"
-  _h "PROD_CRON_SECRET"           "Required by \`prod\` group (set in .env.local)"
-  _h "FD_NO_COLOR"                "Set to disable ANSI colour output"
-  cat <<EOF
-
-${C_BOLD}EXAMPLES${C_RESET}
-EOF
-  _ex "./fd.sh user signup you@example.com"          "email yourself a signup link"
-  _ex "./fd.sh --local user signup you@example.com"  "...against local dev server"
-  _ex "./fd.sh prod cron-exec"                       "force a fresh data fan-out"
-  _ex "./fd.sh prod page-refresh u_dev_local"        "revalidate one user's page"
 }
 
 # ── Validation / preflight ─────────────────────────────────────────────────
