@@ -2,48 +2,50 @@
 #
 # fd.sh — frontdoor ops CLI
 #
-# Follows the "liway pattern" (#64): every command is `<group> <action> [args]`;
-# coloured `log`/`ok`/`warn`/`err` output; centralised `show_help` with
-# `_h`-aligned columns; `<group>_<action>` feature-function naming; main router
-# is one top-level case on group, nested case on action.
+# Three-level command space (liway-pattern, #64):
 #
-# Adding a new action to an existing group:
-#   1. Write `<group>_<action>()`.
-#   2. Add a case in that group's router.
-#   3. Add an `_h` line in `show_help`.
-# Adding a new group:
-#   1. Implement actions per above.
-#   2. Add a top-level `case` arm for the group.
-#   3. Add a group header + `_h` lines in `show_help`.
-#   4. (Per liway rule 3) Provide at least one discovery action
-#      (e.g. `<group> status` / `<group> list`).
+#   ./fd.sh <env> <subgroup> <action> [args]
 #
-# Conventions (liway style, #64):
-#   - log()  actions about to happen        (cyan [fd] prefix, col 0)
-#   - ok()   successful outcomes            (green ✓, 2-space indent)
-#   - warn() non-fatal anomalies            (yellow !, 2-space indent, stderr)
-#   - err()  fatal failures                 (red ✗, 2-space indent, stderr)
-#   - Manual hint lines under err / warn use 4-space indent so they
-#     nest under the message text (which starts at col 4).
-#   - Manual hint lines under log use 2-space indent so they nest
-#     under the [fd] prefix (which is at col 0, message at col 5).
-#   - Exit 0 on 2xx outcomes, 64 on usage error (sysexits EX_USAGE),
-#     1 on other failure.
+#     env       prod | local         (which environment to hit)
+#     subgroup  user | cron          (feature area)
+#     action    signup / exec / page-refresh    (verb)
 #
-# Conventions enforced for `prod` group:
-#   - Always target the canonical production URL (--url/--local ignored).
-#   - Always require PROD_CRON_SECRET in .env.local. Fail with setup
-#     guidance otherwise.
+# The split mirrors the operational reality: every action exists in both
+# environments and does the same thing — only the URL and secret change.
+# Putting env in the command path (rather than a --local flag) makes the
+# target explicit at the call site and prevents the "oh I meant local"
+# mistake on state-mutating ops.
+#
+# Implementation pattern:
+#   - One shared `_impl_<action>()` carries the logic (curl + display +
+#     status classification).
+#   - Per-env wrappers (`prod_<sub>_<action>`, `local_<sub>_<action>`)
+#     load the right base URL + secret and delegate to `_impl_*`.
+#   - Three router layers: env → subgroup → action. Each layer prints
+#     "available: …" on bad input.
+#
+# Output (liway style):
+#   - log()  cyan [fd] prefix at col 0       — announces action
+#   - ok()   2-space indent + green ✓        — successful outcome
+#   - warn() 2-space indent + yellow !       — non-fatal anomaly (stderr)
+#   - err()  2-space indent + red ✗          — fatal failure (stderr)
+#   - Hint lines under err / warn use 4-space indent (nest under msg text).
+#   - Hint lines under log use 2-space indent (nest under [fd]).
+#
+# Exit codes:
+#   0   on 2xx outcomes
+#   64  on usage error (sysexits EX_USAGE)
+#   1   on other failure
 #
 set -euo pipefail
 
 # ── Globals ────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_BASE_URL="https://frontdoor.barooah.io"
-LOCAL_BASE_URL="http://localhost:3000"
-# Prod ops always hit the canonical domain — see "Conventions for `prod`" above.
-PROD_BASE_URL="https://frontdoor.barooah.io"
-BASE_URL="${FD_BASE_URL:-$DEFAULT_BASE_URL}"
+
+# Env-specific base URLs. Defaults match the deployed canonical surface;
+# override via env var if you need to (e.g. preview deploys, remote dev).
+FD_PROD_BASE_URL="${FD_PROD_BASE_URL:-https://frontdoor.barooah.io}"
+FD_LOCAL_BASE_URL="${FD_LOCAL_BASE_URL:-http://localhost:3000}"
 
 # Auto-source .env.local relative to the script (not cwd) so fd.sh works from
 # any subdir. Quiet on absence; per-action `require_*` helpers error specifically.
@@ -70,12 +72,6 @@ else
 fi
 
 # ── Output helpers ─────────────────────────────────────────────────────────
-# Liway-pattern (#64): branded `[fd]` prefix for log lines (announces action
-# at column 0); ok / warn / err nest under with 2-space indent + coloured
-# glyph (✓ green, ! yellow, ✗ red). Manual hint lines under err / warn use
-# 4-space indent to nest under the message text (which starts at col 4).
-# warn + err go to stderr so they survive stdout redirection. `dim` is for
-# inline annotation within a larger printed line, not standalone messages.
 log()  { printf "%s[fd]%s %s\n"   "$C_CYAN"   "$C_RESET" "$*"; }
 ok()   { printf "  %s✓%s %s\n"    "$C_GREEN"  "$C_RESET" "$*"; }
 warn() { printf "  %s!%s %s\n"    "$C_YELLOW" "$C_RESET" "$*" >&2; }
@@ -83,19 +79,31 @@ err()  { printf "  %s✗%s %s\n"    "$C_RED"    "$C_RESET" "$*" >&2; }
 dim()  { printf "%s%s%s"          "$C_DIM"    "$*"       "$C_RESET"; }
 
 # ── Help renderer ──────────────────────────────────────────────────────────
-# _h "<command>" "<description>" — column-aligned help row in the liway
-# style (#64): 4-space indent + cyan command in a 36-char column + plain
-# description. ANSI escapes are 0-visible-width so alignment is preserved.
-_h() { printf "    %s%-36s%s%s\n" "$C_CYAN" "$1" "$C_RESET" "$2"; }
+# Three-level layout, matching the command space:
+#   _section  — env header (col 2, bold + dim paren context)
+#   _subgroup — subgroup name (col 4, plain)
+#   _action   — full command + description (col 6, cyan command, 40-col pad)
+_section()  { printf "  %s%s%s  %s%s%s\n" "$C_BOLD" "$1" "$C_RESET" "$C_DIM" "$2" "$C_RESET"; }
+_subgroup() { printf "    %s\n" "$1"; }
+_action()   { printf "      %s%-40s%s%s\n" "$C_CYAN" "$1" "$C_RESET" "$2"; }
 
 show_help() {
   echo ""
-  echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<group>${C_RESET} <action> [args]"
+  echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<env>${C_RESET} ${C_CYAN}<subgroup>${C_RESET} <action> [args]"
   echo ""
-  _h "user signup <email>"        "Email yourself a signup link"
-  _h "prod cron-exec"             "Trigger the daily cron"
-  _h "prod page-refresh [userId]" "Force dashboards to re-render"
-  echo -e "    ${C_DIM}Use --local to target http://localhost:3000 (default is prod).${C_RESET}"
+  _section "Production" "($FD_PROD_BASE_URL)"
+  _subgroup "user"
+  _action   "prod user signup <email>"        "Email yourself a signup link"
+  _subgroup "cron"
+  _action   "prod cron exec"                  "Trigger the daily cron"
+  _action   "prod cron page-refresh [userId]" "Force dashboards to re-render"
+  echo ""
+  _section "Local" "($FD_LOCAL_BASE_URL — needs \`pnpm dev\` running)"
+  _subgroup "user"
+  _action   "local user signup <email>"        "...against dev"
+  _subgroup "cron"
+  _action   "local cron exec"                  "...against dev"
+  _action   "local cron page-refresh [userId]" "...against dev"
   echo ""
 }
 
@@ -103,8 +111,7 @@ show_help() {
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # Pretty-prints stdin JSON via jq if present; otherwise raw passthrough.
-# Always returns 0 so a non-JSON body doesn't kill the script before we've
-# shown the user the body.
+# Returns 0 even on non-JSON so a malformed body doesn't kill the script.
 pretty_json() {
   if have jq; then
     jq . 2>/dev/null || cat
@@ -129,7 +136,7 @@ require_prod_secret() {
     err "PROD_CRON_SECRET is not set."
     cat >&2 <<EOF
 
-Prod-group actions need it to authenticate against /api/refresh and
+Prod cron actions need it to authenticate against /api/refresh and
 /api/revalidate. To set up:
 
   1. Generate a fresh secret:    openssl rand -hex 32
@@ -147,14 +154,30 @@ EOF
   fi
 }
 
+require_local_cron_secret() {
+  if [[ -z "${CRON_SECRET:-}" ]]; then
+    err "CRON_SECRET is not set in .env.local."
+    cat >&2 <<EOF
+
+Local cron actions need the local CRON_SECRET (the one your dev
+server loads). Generate with: openssl rand -hex 32
+Add to .env.local as:        CRON_SECRET=<value>
+
+This is the LOCAL secret — different from PROD_CRON_SECRET.
+Restart \`pnpm dev\` so the dev server picks up the new value.
+EOF
+    exit 1
+  fi
+}
+
 # Issue a POST with a bearer token; print → / status / pretty body. Sets the
 # global LAST_HTTP_CODE so the caller can classify (stdout is the display
 # channel, so we can't return-via-stdout).
 LAST_HTTP_CODE=""
 post_with_bearer() {
-  local url="$1" bearer="$2"
+  local url="$1" bearer="$2" secret_name="${3:-bearer}"
   log "POST $url"
-  echo "  $(dim "bearer: <PROD_CRON_SECRET>")"
+  echo "  $(dim "bearer: <$secret_name>")"
   echo
 
   local tmp
@@ -174,17 +197,16 @@ post_with_bearer() {
   echo
 }
 
-# ── user group ─────────────────────────────────────────────────────────────
+# ── Shared action implementations ──────────────────────────────────────────
+# Each `_impl_*` carries the logic; per-env wrappers below set the right URL
+# + secret + display label and delegate here.
 
-# user signup <email>
-#   POST /api/keys → always 202 on success (the key is only emailed).
-#   400 on invalid email, 429 if rate-limited.
-user_signup() {
-  require_curl
-  local email="${1:-}"
+# _impl_user_signup <base_url> <email>
+_impl_user_signup() {
+  local base_url="$1" email="$2"
   if [[ -z "$email" ]]; then
     err "missing email"
-    echo "    usage: ./fd.sh user signup <email>" >&2
+    echo "    usage: ./fd.sh {prod|local} user signup <email>" >&2
     exit 64
   fi
   if ! looks_like_email "$email"; then
@@ -192,7 +214,7 @@ user_signup() {
     exit 64
   fi
 
-  local url="${BASE_URL%/}/api/keys"
+  local url="${base_url%/}/api/keys"
   local body="{\"email\":\"$email\"}"
 
   log "POST $url"
@@ -210,6 +232,7 @@ user_signup() {
     -H 'content-type: application/json' \
     --data "$body") || {
       err "curl failed (network error?)"
+      echo "    Is the target server up? Tried: $base_url" >&2
       exit 1
     }
 
@@ -225,129 +248,201 @@ user_signup() {
     429) err "Rate-limited."
          echo "    Try again in a minute." >&2
          exit 1 ;;
-    000) err "Could not reach $BASE_URL — is the server up?"
-         echo "    Try ./fd.sh --local user signup $email if testing locally." >&2
+    000) err "Could not reach $base_url — is the server up?"
          exit 1 ;;
     *)   err "Unexpected response $code."
          exit 1 ;;
   esac
 }
 
-user_router() {
+# _impl_cron_exec <base_url> <secret> <secret_name> <env_label>
+_impl_cron_exec() {
+  local base_url="$1" secret="$2" secret_name="$3" env_label="$4"
+  log "Triggering daily cron manually on $env_label"
+  echo "  $(dim "(normally fires at 03:00 UTC; this runs it now)")"
+  echo
+
+  post_with_bearer "${base_url%/}/api/refresh" "$secret" "$secret_name"
+
+  case "$LAST_HTTP_CODE" in
+    200) ok "Cron run accepted." ;;
+    401) err "Unauthorized — $secret_name doesn't match $env_label runtime value."
+         if [[ "$env_label" == "prod" ]]; then
+           echo "    (rotation in-flight? wait for the deploy to be Ready and retry)" >&2
+         else
+           echo "    (dev server may have loaded an older CRON_SECRET — restart \`pnpm dev\`)" >&2
+         fi
+         exit 1 ;;
+    *)   err "Unexpected response $LAST_HTTP_CODE."
+         exit 1 ;;
+  esac
+}
+
+# _impl_cron_page_refresh <base_url> <secret> <secret_name> <env_label> [user_id]
+_impl_cron_page_refresh() {
+  local base_url="$1" secret="$2" secret_name="$3" env_label="$4"
+  local user_id="${5:-}"
+  local url="${base_url%/}/api/revalidate"
+  if [[ -n "$user_id" ]]; then
+    url="$url?userId=$user_id"
+    log "Revalidating one user on $env_label: $user_id"
+  else
+    log "Revalidating all users' /fd/<slug> pages on $env_label"
+  fi
+  echo
+
+  post_with_bearer "$url" "$secret" "$secret_name"
+
+  case "$LAST_HTTP_CODE" in
+    200) ok "Revalidation request accepted." ;;
+    401) err "Unauthorized — $secret_name doesn't match $env_label runtime value."
+         exit 1 ;;
+    *)   err "Unexpected response $LAST_HTTP_CODE."
+         exit 1 ;;
+  esac
+}
+
+# ── Per-env wrappers (thin) ────────────────────────────────────────────────
+
+prod_user_signup()        { require_curl; _impl_user_signup "$FD_PROD_BASE_URL" "${1:-}"; }
+prod_cron_exec()          { require_curl; require_prod_secret; _impl_cron_exec "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod"; }
+prod_cron_page_refresh()  { require_curl; require_prod_secret; _impl_cron_page_refresh "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod" "${1:-}"; }
+
+local_user_signup()       { require_curl; _impl_user_signup "$FD_LOCAL_BASE_URL" "${1:-}"; }
+local_cron_exec()         { require_curl; require_local_cron_secret; _impl_cron_exec "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local"; }
+local_cron_page_refresh() { require_curl; require_local_cron_secret; _impl_cron_page_refresh "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local" "${1:-}"; }
+
+# ── Sub-dispatchers (subgroup → action) ────────────────────────────────────
+# One per (env, subgroup) — list available actions on bad input.
+
+prod_user_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
-    err "user: missing action"
+    err "prod user: missing action"
     echo "    available: signup" >&2
     exit 64
   fi
   shift
   case "$action" in
-    signup) user_signup "$@" ;;
-    *) err "unknown user action: $action"
+    signup) prod_user_signup "$@" ;;
+    *) err "unknown prod user action: $action"
        echo "    available: signup" >&2
        exit 64 ;;
   esac
 }
 
-# ── prod group ─────────────────────────────────────────────────────────────
-
-# prod cron-exec
-#   Same code path Vercel cron fires at 03:00 UTC daily: POST /api/refresh,
-#   fans out to every global source via Promise.allSettled, then revalidates
-#   every user's /fd/<slug> ISR page.
-prod_cron_exec() {
-  require_curl
-  require_prod_secret
-  log "Triggering daily cron manually"
-  echo "  $(dim "(normally fires at 03:00 UTC; this runs it now)")"
-  echo
-
-  local url="${PROD_BASE_URL%/}/api/refresh"
-  post_with_bearer "$url" "$PROD_CRON_SECRET"
-
-  case "$LAST_HTTP_CODE" in
-    200) ok "Cron run accepted." ;;
-    401) err "Unauthorized — PROD_CRON_SECRET doesn't match Vercel's runtime value."
-         echo "    (rotation in-flight? wait for the deploy to be Ready and retry)" >&2
-         exit 1 ;;
-    *)   err "Unexpected response $LAST_HTTP_CODE."
-         exit 1 ;;
-  esac
-}
-
-# prod page-refresh [userId]
-#   POST /api/revalidate. No arg → revalidate every user. With userId → just
-#   that one. Standalone variant of the chain-revalidate that `cron-exec`
-#   does at the end; useful for post-config-change cache busts (~ms vs
-#   seconds).
-prod_page_refresh() {
-  require_curl
-  require_prod_secret
-  local user_id="${1:-}"
-  local url="${PROD_BASE_URL%/}/api/revalidate"
-  if [[ -n "$user_id" ]]; then
-    url="$url?userId=$user_id"
-    log "Revalidating one user: $user_id"
-  else
-    log "Revalidating all users' /fd/<slug> pages"
-  fi
-  echo
-
-  post_with_bearer "$url" "$PROD_CRON_SECRET"
-
-  case "$LAST_HTTP_CODE" in
-    200) ok "Revalidation request accepted." ;;
-    401) err "Unauthorized — PROD_CRON_SECRET doesn't match Vercel's runtime value."
-         exit 1 ;;
-    *)   err "Unexpected response $LAST_HTTP_CODE."
-         exit 1 ;;
-  esac
-}
-
-prod_router() {
+prod_cron_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
-    err "prod: missing action"
-    echo "    available: cron-exec, page-refresh" >&2
+    err "prod cron: missing action"
+    echo "    available: exec, page-refresh" >&2
     exit 64
   fi
   shift
   case "$action" in
-    cron-exec)    prod_cron_exec "$@" ;;
-    page-refresh) prod_page_refresh "$@" ;;
-    *) err "unknown prod action: $action"
-       echo "    available: cron-exec, page-refresh" >&2
+    exec)         prod_cron_exec "$@" ;;
+    page-refresh) prod_cron_page_refresh "$@" ;;
+    *) err "unknown prod cron action: $action"
+       echo "    available: exec, page-refresh" >&2
+       exit 64 ;;
+  esac
+}
+
+local_user_dispatch() {
+  local action="${1:-}"
+  if [[ -z "$action" ]]; then
+    err "local user: missing action"
+    echo "    available: signup" >&2
+    exit 64
+  fi
+  shift
+  case "$action" in
+    signup) local_user_signup "$@" ;;
+    *) err "unknown local user action: $action"
+       echo "    available: signup" >&2
+       exit 64 ;;
+  esac
+}
+
+local_cron_dispatch() {
+  local action="${1:-}"
+  if [[ -z "$action" ]]; then
+    err "local cron: missing action"
+    echo "    available: exec, page-refresh" >&2
+    exit 64
+  fi
+  shift
+  case "$action" in
+    exec)         local_cron_exec "$@" ;;
+    page-refresh) local_cron_page_refresh "$@" ;;
+    *) err "unknown local cron action: $action"
+       echo "    available: exec, page-refresh" >&2
+       exit 64 ;;
+  esac
+}
+
+# ── Env dispatchers (env → subgroup) ───────────────────────────────────────
+
+prod_dispatch() {
+  local sub="${1:-}"
+  if [[ -z "$sub" ]]; then
+    err "prod: missing subgroup"
+    echo "    available: user, cron" >&2
+    exit 64
+  fi
+  shift
+  case "$sub" in
+    user) prod_user_dispatch "$@" ;;
+    cron) prod_cron_dispatch "$@" ;;
+    *) err "unknown prod subgroup: $sub"
+       echo "    available: user, cron" >&2
+       exit 64 ;;
+  esac
+}
+
+local_dispatch() {
+  local sub="${1:-}"
+  if [[ -z "$sub" ]]; then
+    err "local: missing subgroup"
+    echo "    available: user, cron" >&2
+    exit 64
+  fi
+  shift
+  case "$sub" in
+    user) local_user_dispatch "$@" ;;
+    cron) local_cron_dispatch "$@" ;;
+    *) err "unknown local subgroup: $sub"
+       echo "    available: user, cron" >&2
        exit 64 ;;
   esac
 }
 
 # ── Global option parsing ──────────────────────────────────────────────────
+# Only --help; env is now in the command path (`prod` / `local`).
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --local) BASE_URL="$LOCAL_BASE_URL"; shift ;;
-    --url)
-      [[ $# -ge 2 ]] || { err "--url requires a value"; exit 64; }
-      BASE_URL="$2"; shift 2 ;;
     -h|--help|help) show_help; exit 0 ;;
     --) shift; break ;;
-    -*) err "unknown option: $1"; show_help >&2; exit 64 ;;
+    -*) err "unknown option: $1"
+        echo "    run ./fd.sh --help for the command surface" >&2
+        exit 64 ;;
     *)  break ;;
   esac
 done
 
-# ── Main router ────────────────────────────────────────────────────────────
-group="${1:-}"
-if [[ -z "$group" ]]; then
+# ── Main router (env-level dispatch) ───────────────────────────────────────
+env="${1:-}"
+if [[ -z "$env" ]]; then
   show_help
   exit 64
 fi
 shift
 
-case "$group" in
-  user) user_router "$@" ;;
-  prod) prod_router "$@" ;;
-  *) err "unknown group: $group"
-     echo "    available: user, prod" >&2
+case "$env" in
+  prod)  prod_dispatch "$@" ;;
+  local) local_dispatch "$@" ;;
+  *) err "unknown env: $env"
+     echo "    available: prod, local" >&2
      echo "    run ./fd.sh --help for the full surface" >&2
      exit 64 ;;
 esac
