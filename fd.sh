@@ -18,11 +18,15 @@
 #   4. (Per liway rule 3) Provide at least one discovery action
 #      (e.g. `<group> status` / `<group> list`).
 #
-# Conventions:
-#   - log()  for actions about to happen (cyan →)
-#   - ok()   for successful outcomes      (green ✓)
-#   - warn() for non-fatal anomalies      (yellow ⚠, stderr)
-#   - err()  for fatal failures           (red ✗, stderr)
+# Conventions (liway style, #64):
+#   - log()  actions about to happen        (cyan [fd] prefix, col 0)
+#   - ok()   successful outcomes            (green ✓, 2-space indent)
+#   - warn() non-fatal anomalies            (yellow !, 2-space indent, stderr)
+#   - err()  fatal failures                 (red ✗, 2-space indent, stderr)
+#   - Manual hint lines under err / warn use 4-space indent so they
+#     nest under the message text (which starts at col 4).
+#   - Manual hint lines under log use 2-space indent so they nest
+#     under the [fd] prefix (which is at col 0, message at col 5).
 #   - Exit 0 on 2xx outcomes, 64 on usage error (sysexits EX_USAGE),
 #     1 on other failure.
 #
@@ -66,11 +70,17 @@ else
 fi
 
 # ── Output helpers ─────────────────────────────────────────────────────────
-log()  { printf "%s→%s %s\n" "$C_CYAN" "$C_RESET" "$*"; }
-ok()   { printf "%s✓%s %s\n" "$C_GREEN" "$C_RESET" "$*"; }
-warn() { printf "%s⚠%s %s\n" "$C_YELLOW" "$C_RESET" "$*" >&2; }
-err()  { printf "%s✗%s %s\n" "$C_RED" "$C_RESET" "$*" >&2; }
-dim()  { printf "%s%s%s" "$C_DIM" "$*" "$C_RESET"; }
+# Liway-pattern (#64): branded `[fd]` prefix for log lines (announces action
+# at column 0); ok / warn / err nest under with 2-space indent + coloured
+# glyph (✓ green, ! yellow, ✗ red). Manual hint lines under err / warn use
+# 4-space indent to nest under the message text (which starts at col 4).
+# warn + err go to stderr so they survive stdout redirection. `dim` is for
+# inline annotation within a larger printed line, not standalone messages.
+log()  { printf "%s[fd]%s %s\n"   "$C_CYAN"   "$C_RESET" "$*"; }
+ok()   { printf "  %s✓%s %s\n"    "$C_GREEN"  "$C_RESET" "$*"; }
+warn() { printf "  %s!%s %s\n"    "$C_YELLOW" "$C_RESET" "$*" >&2; }
+err()  { printf "  %s✗%s %s\n"    "$C_RED"    "$C_RESET" "$*" >&2; }
+dim()  { printf "%s%s%s"          "$C_DIM"    "$*"       "$C_RESET"; }
 
 # ── Help renderer ──────────────────────────────────────────────────────────
 # _h "<command>" "<description>" — column-aligned help row in the liway
@@ -174,7 +184,7 @@ user_signup() {
   local email="${1:-}"
   if [[ -z "$email" ]]; then
     err "missing email"
-    echo "  usage: ./fd.sh user signup <email>" >&2
+    echo "    usage: ./fd.sh user signup <email>" >&2
     exit 64
   fi
   if ! looks_like_email "$email"; then
@@ -210,13 +220,13 @@ user_signup() {
   case "$code" in
     202) ok "Accepted. Check $email (inbox + spam) for a signup link." ;;
     400) err "Bad request — email rejected or body malformed."
-         echo "  Server is the source of truth on email validity; check the body above." >&2
+         echo "    Server is the source of truth on email validity; check the body above." >&2
          exit 1 ;;
     429) err "Rate-limited."
-         echo "  Try again in a minute." >&2
+         echo "    Try again in a minute." >&2
          exit 1 ;;
     000) err "Could not reach $BASE_URL — is the server up?"
-         echo "  Try ./fd.sh --local user signup $email if testing locally." >&2
+         echo "    Try ./fd.sh --local user signup $email if testing locally." >&2
          exit 1 ;;
     *)   err "Unexpected response $code."
          exit 1 ;;
@@ -227,14 +237,14 @@ user_router() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
     err "user: missing action"
-    echo "  available: signup" >&2
+    echo "    available: signup" >&2
     exit 64
   fi
   shift
   case "$action" in
     signup) user_signup "$@" ;;
     *) err "unknown user action: $action"
-       echo "  available: signup" >&2
+       echo "    available: signup" >&2
        exit 64 ;;
   esac
 }
@@ -258,7 +268,7 @@ prod_cron_exec() {
   case "$LAST_HTTP_CODE" in
     200) ok "Cron run accepted." ;;
     401) err "Unauthorized — PROD_CRON_SECRET doesn't match Vercel's runtime value."
-         echo "  (rotation in-flight? wait for the deploy to be Ready and retry)" >&2
+         echo "    (rotation in-flight? wait for the deploy to be Ready and retry)" >&2
          exit 1 ;;
     *)   err "Unexpected response $LAST_HTTP_CODE."
          exit 1 ;;
@@ -298,7 +308,7 @@ prod_router() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
     err "prod: missing action"
-    echo "  available: cron-exec, page-refresh" >&2
+    echo "    available: cron-exec, page-refresh" >&2
     exit 64
   fi
   shift
@@ -306,7 +316,7 @@ prod_router() {
     cron-exec)    prod_cron_exec "$@" ;;
     page-refresh) prod_page_refresh "$@" ;;
     *) err "unknown prod action: $action"
-       echo "  available: cron-exec, page-refresh" >&2
+       echo "    available: cron-exec, page-refresh" >&2
        exit 64 ;;
   esac
 }
@@ -337,7 +347,7 @@ case "$group" in
   user) user_router "$@" ;;
   prod) prod_router "$@" ;;
   *) err "unknown group: $group"
-     echo "  available: user, prod" >&2
-     echo "  run ./fd.sh --help for the full surface" >&2
+     echo "    available: user, prod" >&2
+     echo "    run ./fd.sh --help for the full surface" >&2
      exit 64 ;;
 esac
