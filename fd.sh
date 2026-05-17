@@ -7,8 +7,11 @@
 #   ./fd.sh <env> <subgroup> <action> [args]
 #
 #     env       prod | local         (which environment to hit)
-#     subgroup  user | cron          (feature area)
-#     action    signup / exec / page-refresh    (verb)
+#     subgroup  user | cache         (feature area — `cache` covers cache-warming
+#                                     and ISR cache invalidation; both auth via
+#                                     CRON_SECRET in their respective envs)
+#     action    signup / refresh / revalidate   (verb; refresh = /api/refresh,
+#                                                revalidate = /api/revalidate)
 #
 # The split mirrors the operational reality: every action exists in both
 # environments and does the same thing — only the URL and secret change.
@@ -91,19 +94,19 @@ show_help() {
   echo ""
   echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<env>${C_RESET} ${C_CYAN}<subgroup>${C_RESET} <action> [args]"
   echo ""
-  _section "Production" "($FD_PROD_BASE_URL)"
+  _section "Production" "($FD_PROD_BASE_URL — \`cache refresh\` also auto-fires at 03:00 UTC)"
   _subgroup "user"
   _action   "prod user signup <email>"        "Email yourself a signup link"
-  _subgroup "cron"
-  _action   "prod cron exec"                  "Trigger the daily cron"
-  _action   "prod cron page-refresh [userId]" "Force dashboards to re-render"
+  _subgroup "cache"
+  _action   "prod cache refresh"              "Refresh data + pages (= /api/refresh)"
+  _action   "prod cache revalidate [userId]"  "Revalidate page ISR only (= /api/revalidate)"
   echo ""
-  _section "Local" "($FD_LOCAL_BASE_URL — needs \`pnpm dev\` running)"
+  _section "Local" "($FD_LOCAL_BASE_URL — needs \`pnpm dev\` running; no schedule)"
   _subgroup "user"
   _action   "local user signup <email>"        "...against dev"
-  _subgroup "cron"
-  _action   "local cron exec"                  "...against dev"
-  _action   "local cron page-refresh [userId]" "...against dev"
+  _subgroup "cache"
+  _action   "local cache refresh"              "...against dev"
+  _action   "local cache revalidate [userId]"  "...against dev"
   echo ""
 }
 
@@ -136,7 +139,7 @@ require_prod_secret() {
     err "PROD_CRON_SECRET is not set."
     cat >&2 <<EOF
 
-Prod cron actions need it to authenticate against /api/refresh and
+Prod cache actions need it to authenticate against /api/refresh and
 /api/revalidate. To set up:
 
   1. Generate a fresh secret:    openssl rand -hex 32
@@ -159,7 +162,7 @@ require_local_cron_secret() {
     err "CRON_SECRET is not set in .env.local."
     cat >&2 <<EOF
 
-Local cron actions need the local CRON_SECRET (the one your dev
+Local cache actions need the local CRON_SECRET (the one your dev
 server loads). Generate with: openssl rand -hex 32
 Add to .env.local as:        CRON_SECRET=<value>
 
@@ -255,17 +258,21 @@ _impl_user_signup() {
   esac
 }
 
-# _impl_cron_exec <base_url> <secret> <secret_name> <env_label>
-_impl_cron_exec() {
+# _impl_cache_refresh <base_url> <secret> <secret_name> <env_label>
+_impl_cache_refresh() {
   local base_url="$1" secret="$2" secret_name="$3" env_label="$4"
-  log "Triggering daily cron manually on $env_label"
-  echo "  $(dim "(normally fires at 03:00 UTC; this runs it now)")"
+  log "Refreshing $env_label cache (POST /api/refresh)"
+  # The schedule note is only true for prod — local has no Vercel Cron;
+  # every `local cache refresh` is a manual invocation.
+  if [[ "$env_label" == "prod" ]]; then
+    echo "  $(dim "(this is what Vercel Cron fires daily at 03:00 UTC)")"
+  fi
   echo
 
   post_with_bearer "${base_url%/}/api/refresh" "$secret" "$secret_name"
 
   case "$LAST_HTTP_CODE" in
-    200) ok "Cron run accepted." ;;
+    200) ok "Cache refresh accepted." ;;
     401) err "Unauthorized — $secret_name doesn't match $env_label runtime value."
          if [[ "$env_label" == "prod" ]]; then
            echo "    (rotation in-flight? wait for the deploy to be Ready and retry)" >&2
@@ -278,8 +285,8 @@ _impl_cron_exec() {
   esac
 }
 
-# _impl_cron_page_refresh <base_url> <secret> <secret_name> <env_label> [user_id]
-_impl_cron_page_refresh() {
+# _impl_cache_revalidate <base_url> <secret> <secret_name> <env_label> [user_id]
+_impl_cache_revalidate() {
   local base_url="$1" secret="$2" secret_name="$3" env_label="$4"
   local user_id="${5:-}"
   local url="${base_url%/}/api/revalidate"
@@ -305,12 +312,12 @@ _impl_cron_page_refresh() {
 # ── Per-env wrappers (thin) ────────────────────────────────────────────────
 
 prod_user_signup()        { require_curl; _impl_user_signup "$FD_PROD_BASE_URL" "${1:-}"; }
-prod_cron_exec()          { require_curl; require_prod_secret; _impl_cron_exec "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod"; }
-prod_cron_page_refresh()  { require_curl; require_prod_secret; _impl_cron_page_refresh "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod" "${1:-}"; }
+prod_cache_refresh()          { require_curl; require_prod_secret; _impl_cache_refresh "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod"; }
+prod_cache_revalidate()  { require_curl; require_prod_secret; _impl_cache_revalidate "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod" "${1:-}"; }
 
 local_user_signup()       { require_curl; _impl_user_signup "$FD_LOCAL_BASE_URL" "${1:-}"; }
-local_cron_exec()         { require_curl; require_local_cron_secret; _impl_cron_exec "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local"; }
-local_cron_page_refresh() { require_curl; require_local_cron_secret; _impl_cron_page_refresh "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local" "${1:-}"; }
+local_cache_refresh()         { require_curl; require_local_cron_secret; _impl_cache_refresh "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local"; }
+local_cache_revalidate() { require_curl; require_local_cron_secret; _impl_cache_revalidate "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local" "${1:-}"; }
 
 # ── Sub-dispatchers (subgroup → action) ────────────────────────────────────
 # One per (env, subgroup) — list available actions on bad input.
@@ -331,19 +338,19 @@ prod_user_dispatch() {
   esac
 }
 
-prod_cron_dispatch() {
+prod_cache_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
-    err "prod cron: missing action"
-    echo "    available: exec, page-refresh" >&2
+    err "prod cache: missing action"
+    echo "    available: refresh, revalidate" >&2
     exit 64
   fi
   shift
   case "$action" in
-    exec)         prod_cron_exec "$@" ;;
-    page-refresh) prod_cron_page_refresh "$@" ;;
-    *) err "unknown prod cron action: $action"
-       echo "    available: exec, page-refresh" >&2
+    refresh)      prod_cache_refresh "$@" ;;
+    revalidate)   prod_cache_revalidate "$@" ;;
+    *) err "unknown prod cache action: $action"
+       echo "    available: refresh, revalidate" >&2
        exit 64 ;;
   esac
 }
@@ -364,19 +371,19 @@ local_user_dispatch() {
   esac
 }
 
-local_cron_dispatch() {
+local_cache_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
-    err "local cron: missing action"
-    echo "    available: exec, page-refresh" >&2
+    err "local cache: missing action"
+    echo "    available: refresh, revalidate" >&2
     exit 64
   fi
   shift
   case "$action" in
-    exec)         local_cron_exec "$@" ;;
-    page-refresh) local_cron_page_refresh "$@" ;;
-    *) err "unknown local cron action: $action"
-       echo "    available: exec, page-refresh" >&2
+    refresh)      local_cache_refresh "$@" ;;
+    revalidate)   local_cache_revalidate "$@" ;;
+    *) err "unknown local cache action: $action"
+       echo "    available: refresh, revalidate" >&2
        exit 64 ;;
   esac
 }
@@ -387,15 +394,15 @@ prod_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "prod: missing subgroup"
-    echo "    available: user, cron" >&2
+    echo "    available: user, cache" >&2
     exit 64
   fi
   shift
   case "$sub" in
     user) prod_user_dispatch "$@" ;;
-    cron) prod_cron_dispatch "$@" ;;
+    cache) prod_cache_dispatch "$@" ;;
     *) err "unknown prod subgroup: $sub"
-       echo "    available: user, cron" >&2
+       echo "    available: user, cache" >&2
        exit 64 ;;
   esac
 }
@@ -404,15 +411,15 @@ local_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "local: missing subgroup"
-    echo "    available: user, cron" >&2
+    echo "    available: user, cache" >&2
     exit 64
   fi
   shift
   case "$sub" in
     user) local_user_dispatch "$@" ;;
-    cron) local_cron_dispatch "$@" ;;
+    cache) local_cache_dispatch "$@" ;;
     *) err "unknown local subgroup: $sub"
-       echo "    available: user, cron" >&2
+       echo "    available: user, cache" >&2
        exit 64 ;;
   esac
 }
