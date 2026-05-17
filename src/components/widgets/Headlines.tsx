@@ -9,13 +9,20 @@ import type { HeadlinesWidget as HeadlinesWidgetConfig } from '@/lib/config';
 import type { HeadlineItem } from '@/lib/data/sources/headlines';
 import { Panel } from './Panel';
 import { CouldNotLoad } from './CouldNotLoad';
+import { StaleCaption } from './StaleCaption';
 
 type Props = {
   widget: HeadlinesWidgetConfig;
   data: HeadlineItem[] | null;
+  /**
+   * When this feed-set was last successfully fetched. Threaded from
+   * `withResilience` via the dispatcher; surfaces "yesterday" / etc.
+   * when content was served from a previous-day cache. Per #81b/#81c.
+   */
+  fetchedAt?: string | null;
 };
 
-export function HeadlinesWidget({ widget, data }: Props) {
+export function HeadlinesWidget({ widget, data, fetchedAt }: Props) {
   return (
     <Panel color={widget.color} span={widget.span} icon={widget.icon} title={widget.title}>
       {!data ? (
@@ -33,6 +40,7 @@ export function HeadlinesWidget({ widget, data }: Props) {
             ))}
           </ul>
           <div className="headlines-footer">via {widget.feeds.map((f) => f.name).join(', ')}</div>
+          <StaleCaption fetchedAt={fetchedAt} />
         </>
       )}
     </Panel>

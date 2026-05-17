@@ -97,16 +97,13 @@ export async function renderWidget(widget: Widget): Promise<React.JSX.Element> {
     }
 
     case 'weather': {
-      // Weather + headlines don't currently render the stale caption — both
-      // have parameterized cache keys (per-location / per-feed-set hash) and
-      // their own freshness semantics. Defer per #81 body.
-      const { data } = unwrap(await fetchWeather(widget.lat, widget.lon));
-      return <WeatherWidget widget={widget} data={data} />;
+      const { data, fetchedAt } = unwrap(await fetchWeather(widget.lat, widget.lon));
+      return <WeatherWidget widget={widget} data={data} fetchedAt={fetchedAt} />;
     }
 
     case 'headlines': {
-      const { data } = unwrap(await fetchHeadlines(widget.feeds, widget.count));
-      return <HeadlinesWidget widget={widget} data={data} />;
+      const { data, fetchedAt } = unwrap(await fetchHeadlines(widget.feeds, widget.count));
+      return <HeadlinesWidget widget={widget} data={data} fetchedAt={fetchedAt} />;
     }
   }
 }

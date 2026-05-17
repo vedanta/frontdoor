@@ -13,10 +13,17 @@ import type { WeatherData } from '@/lib/data/sources/types';
 import { wmoDescription } from '@/lib/data/sources/weather';
 import { Panel } from './Panel';
 import { CouldNotLoad } from './CouldNotLoad';
+import { StaleCaption } from './StaleCaption';
 
 type Props = {
   widget: WeatherWidgetConfig;
   data: WeatherData | null;
+  /**
+   * When this location's weather was last successfully fetched. Threaded
+   * from `withResilience` via the dispatcher; surfaces "yesterday" / etc.
+   * when content was served from a previous-day cache. Per #81b/#81c.
+   */
+  fetchedAt?: string | null;
 };
 
 /** WMO code → single-glyph icon. Mirrors design/04-data-sources.md. */
@@ -54,7 +61,7 @@ const shortDay = (iso: string) => {
 /** Pull HH:MM from an ISO-ish datetime string. */
 const timeOnly = (iso: string) => iso.split('T')[1] ?? iso;
 
-export function WeatherWidget({ widget, data }: Props) {
+export function WeatherWidget({ widget, data, fetchedAt }: Props) {
   return (
     <Panel color={widget.color} span={widget.span} icon={widget.icon} title={widget.title}>
       {!data ? (
@@ -94,6 +101,7 @@ export function WeatherWidget({ widget, data }: Props) {
             <span>↑ {timeOnly(data.today.sunrise)}</span>
             <span>↓ {timeOnly(data.today.sunset)}</span>
           </div>
+          <StaleCaption fetchedAt={fetchedAt} />
         </>
       )}
     </Panel>
