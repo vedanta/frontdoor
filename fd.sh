@@ -73,22 +73,20 @@ err()  { printf "%s✗%s %s\n" "$C_RED" "$C_RESET" "$*" >&2; }
 dim()  { printf "%s%s%s" "$C_DIM" "$*" "$C_RESET"; }
 
 # ── Help renderer ──────────────────────────────────────────────────────────
-# _h "<command>" "<description>" — column-aligned help row.
-_h() { printf "  %s%-32s%s  %s\n" "$C_BOLD" "$1" "$C_RESET" "$2"; }
+# _h "<command>" "<description>" — column-aligned help row in the liway
+# style (#64): 4-space indent + cyan command in a 36-char column + plain
+# description. ANSI escapes are 0-visible-width so alignment is preserved.
+_h() { printf "    %s%-36s%s%s\n" "$C_CYAN" "$1" "$C_RESET" "$2"; }
 
 show_help() {
-  cat <<EOF
-${C_BOLD}fd.sh${C_RESET} — frontdoor ops
-
-EOF
+  echo ""
+  echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<group>${C_RESET} <action> [args]"
+  echo ""
   _h "user signup <email>"        "Email yourself a signup link"
   _h "prod cron-exec"             "Trigger the daily cron"
   _h "prod page-refresh [userId]" "Force dashboards to re-render"
-  cat <<EOF
-
-  ${C_DIM}e.g.${C_RESET}  ./fd.sh user signup you@example.com
-        ./fd.sh --local user signup you@example.com   ${C_DIM}# target dev${C_RESET}
-EOF
+  echo -e "    ${C_DIM}Use --local to target http://localhost:3000 (default is prod).${C_RESET}"
+  echo ""
 }
 
 # ── Validation / preflight ─────────────────────────────────────────────────
