@@ -96,38 +96,29 @@ err()  { printf "  %s✗%s %s\n"    "$C_RED"    "$C_RESET" "$*" >&2; }
 dim()  { printf "%s%s%s"          "$C_DIM"    "$*"       "$C_RESET"; }
 
 # ── Help renderer ──────────────────────────────────────────────────────────
-# Three-level layout, matching the command space:
-#   _section  — env header (col 2, bold + dim paren context)
-#   _subgroup — subgroup name (col 4, plain)
-#   _action   — full command + description (col 6, cyan command, 40-col pad)
-_section()  { printf "  %s%s%s  %s%s%s\n" "$C_BOLD" "$1" "$C_RESET" "$C_DIM" "$2" "$C_RESET"; }
-_subgroup() { printf "    %s\n" "$1"; }
-_action()   { printf "      %s%-40s%s%s\n" "$C_CYAN" "$1" "$C_RESET" "$2"; }
+# Two-level layout: env section (bold name + dim context) → action rows
+# (cyan command + description). Subgroup is part of the command string
+# (`cache refresh`, `server start`), not a separate header — keeps the
+# help dense without losing path-discoverability.
+_section() { printf "  %s%s%s  %s%s%s\n" "$C_BOLD" "$1" "$C_RESET" "$C_DIM" "$2" "$C_RESET"; }
+_action()  { printf "    %s%-32s%s%s\n"  "$C_CYAN" "$1" "$C_RESET" "$2"; }
 
 show_help() {
   echo ""
   echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<env>${C_RESET} ${C_CYAN}<subgroup>${C_RESET} <action> [args]"
   echo ""
-  _section "Production" "($FD_PROD_BASE_URL — \`cache refresh\` also auto-fires at 03:00 UTC)"
-  _subgroup "user"
-  _action   "prod user signup <email>"        "Email yourself a signup link"
-  _subgroup "cache"
-  _action   "prod cache refresh"              "Refresh data + pages (= /api/refresh)"
-  _action   "prod cache revalidate [userId]"  "Revalidate page ISR only (= /api/revalidate)"
+  _section "Production" "($FD_PROD_BASE_URL · cache refresh runs daily 03:00 UTC)"
+  _action "user signup <email>"       "Email yourself a signup link"
+  _action "cache refresh"             "Warm data + revalidate pages (= /api/refresh)"
+  _action "cache revalidate [userId]" "Revalidate page ISR only"
   echo ""
-  _section "Local" "($FD_LOCAL_BASE_URL — no schedule; manage \`pnpm dev\` via server actions below)"
-  _subgroup "server"
-  _action   "local server start"               "Spawn \`pnpm dev\` (background, PID tracked)"
-  _action   "local server stop"                "SIGTERM (graceful)"
-  _action   "local server restart"             "Stop + start"
-  _action   "local server kill"                "SIGKILL (force; for stuck processes)"
-  _action   "local server status"              "PID, uptime, URL, log path, port collisions"
-  _action   "local server logs"                "tail -f the dev log"
-  _subgroup "user"
-  _action   "local user signup <email>"        "...against dev"
-  _subgroup "cache"
-  _action   "local cache refresh"              "...against dev"
-  _action   "local cache revalidate [userId]"  "...against dev"
+  _section "Local" "($FD_LOCAL_BASE_URL · prod's user/cache actions mirror here)"
+  _action "server start"              "Start \`pnpm dev\` (background, PID tracked)"
+  _action "server stop"               "Stop gracefully (SIGTERM)"
+  _action "server restart"            "Stop + start"
+  _action "server kill"               "Force-kill (SIGKILL + clear port)"
+  _action "server status"             "PID, uptime, URL, log path"
+  _action "server logs"               "tail -f the dev log"
   echo ""
 }
 
