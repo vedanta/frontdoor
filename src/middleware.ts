@@ -65,11 +65,15 @@ async function signedRedirectTo(session: Session, origin: string): Promise<NextR
 
 export async function middleware(req: NextRequest): Promise<NextResponse> {
   const url = req.nextUrl;
-  const redis = getRedis();
 
   // ── ?bootstrap= (#73 — preferred path) ─────────────────────────────
+  // `getRedis()` is called LAZILY inside each branch that needs KV — calling
+  // it at the top of `middleware()` would throw on every page hit (incl.
+  // bare `/` and cookie-only `/fd/[slug]`) when KV env is missing, which is
+  // the local-dev default.
   const bootstrapParam = url.searchParams.get('bootstrap');
   if (bootstrapParam) {
+    const redis = getRedis();
     const record = await redis.get<BootstrapRecord>(bootstrapKey(bootstrapParam));
     if (!record || record.exp < Date.now()) {
       return bootstrapGone();
@@ -83,6 +87,7 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
   // ── ?key= (LEGACY — 60-day backwards-compat window) ─────────────────
   const keyParam = url.searchParams.get('key');
   if (keyParam) {
+    const redis = getRedis();
     const userId = await redis.get<string>(apiKeyKey(keyParam));
     if (userId) {
       const user = await redis.get<UserRecord>(userKey(userId));
