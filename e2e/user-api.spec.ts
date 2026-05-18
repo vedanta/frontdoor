@@ -10,7 +10,14 @@ import { expect, test } from '@playwright/test';
  *
  * Uses the seed fixture from global-setup.ts: known apiKey `deadbeef…` /
  * slug `deadbeef`. Skipped when KV isn't configured (CI without env vars).
+ *
+ * **Serial mode** — playwright.config.ts has `fullyParallel: true`, which
+ * would otherwise run these tests across multiple workers in parallel.
+ * That broke under the old afterEach-restore pattern: worker A's PUT test
+ * raced with worker B's afterEach restoring defaults, so the GET asserted
+ * stale values. Serial + restore-inside-test-body is the durable fix.
  */
+test.describe.configure({ mode: 'serial' });
 
 // Mirrors the DEFAULTS in `scripts/seed-test-user.ts`. Kept in sync by
 // convention — if either side changes, update both.
@@ -48,10 +55,7 @@ test('GET /api/user returns the full seeded record (no apiKey)', async ({ page }
 });
 
 test('PUT /api/user updates name + timezone; reflected on subsequent GET', async ({ page }) => {
-  // Use a timestamped value so this test is robust to re-runs (no
-  // cross-test contamination via the persistent seed user). The afterEach
-  // restores the seeded defaults so later specs that read the seed user
-  // (e.g. dashboard tests) see the pristine values.
+  // Timestamped value to detect any stale read (would never match this).
   const newName = `e2e-user-${Date.now()}`;
   const newTz = 'UTC';
 
@@ -66,15 +70,15 @@ test('PUT /api/user updates name + timezone; reflected on subsequent GET', async
   expect(get.status()).toBe(200);
   const getBody = await get.json();
   expect(getBody).toMatchObject({ name: newName, timezone: newTz });
-});
 
-test.afterEach(async ({ page }) => {
-  // Restore seeded defaults so subsequent specs see the pristine seed user.
-  // Best-effort: ignore failures (e.g. fresh-context tests with no cookie
-  // will 401 here — that's the no-cookie test's invariant, not a problem).
-  await page.request
-    .put('/api/user', { data: { name: SEED_NAME, timezone: SEED_TZ } })
-    .catch(() => {});
+  // Restore defaults INSIDE the test body. Doing this in afterEach raced
+  // with parallel tests under fullyParallel: true. Inside the test body,
+  // the state is consistent for any subsequent test that re-reads the
+  // seed user. (Serial mode plus this restore = belt + suspenders.)
+  const restore = await page.request.put('/api/user', {
+    data: { name: SEED_NAME, timezone: SEED_TZ },
+  });
+  expect(restore.status()).toBe(200);
 });
 
 test('PUT /api/user with unknown field is 400 (strict Zod)', async ({ page }) => {
