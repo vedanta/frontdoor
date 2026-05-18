@@ -2,22 +2,29 @@
 #
 # fd.sh — frontdoor ops CLI
 #
-# Three-level command space (liway-pattern, #64):
+# Top-level layout (#89 moved `user` to its own section):
 #
-#   ./fd.sh <env> <subgroup> <action> [args]
+#   ./fd.sh <env> <subgroup> <action> [args]    (prod / local)
+#   ./fd.sh user <action> [args]                (prod-implicit)
 #
-#     env       prod | local         (which environment to hit)
-#     subgroup  user | cache | server  (feature area)
-#                 - `user`   account-related (signup)
+#     env       prod | local            (cache + server live under each env)
+#     subgroup  cache | server          (feature area)
 #                 - `cache`  cache-warming + ISR invalidation; auth via
 #                            CRON_SECRET (PROD_CRON_SECRET for prod env)
 #                 - `server` dev-server lifecycle — LOCAL ONLY (prod is
 #                            managed by Vercel, not by this CLI)
-#     action    signup / refresh / revalidate / start / stop / restart / kill /
-#               status / logs
-#                 - signup, refresh, revalidate are the HTTP-poke actions
-#                 - start, stop, restart, kill, status, logs are server-lifecycle
-#                   actions (local server only)
+#
+#     user      a top-level section, NOT under prod/local — user-lifecycle
+#               operations only ever target prod (local uses the seeded
+#               static user). The env-prefix would be empty information.
+#               Actions: signup / get / update / delete / list / help
+#               Auth: looks up apiKey via KV REST, sends Bearer header.
+#
+# The env split mirrors operational reality: every env action exists in both
+# environments and does the same thing — only the URL and secret change.
+# Putting env in the command path (rather than a --local flag) makes the
+# target explicit at the call site and prevents the "oh I meant local"
+# mistake on state-mutating ops.
 #
 # The split mirrors the operational reality: every action exists in both
 # environments and does the same thing — only the URL and secret change.
@@ -109,7 +116,6 @@ _action()  { printf "    %s%-32s%s%s\n"  "$C_CYAN" "$1" "$C_RESET" "$2"; }
 # action (./fd.sh prod help, ./fd.sh local help).
 show_help_prod() {
   _section "Production" "($FD_PROD_BASE_URL · cache refresh runs daily 03:00 UTC)"
-  _action "user signup <email>"       "Email yourself a signup link"
   _action "cache refresh"             "Warm data + revalidate pages (= /api/refresh)"
   _action "cache revalidate [userId]" "Revalidate page ISR only"
 }
@@ -122,18 +128,28 @@ show_help_local() {
   _action "server kill"               "Force-kill (SIGKILL + clear port)"
   _action "server status"             "PID, uptime, URL, log path"
   _action "server logs"               "tail -f the dev log"
-  _action "user signup <email>"       "Email yourself a signup link (against dev)"
   _action "cache refresh"             "Warm data + revalidate pages (against dev)"
   _action "cache revalidate [userId]" "Revalidate page ISR only (against dev)"
 }
 
+show_help_user() {
+  _section "User management" "(prod-only · auth via Bearer apiKey looked up from KV)"
+  _action "user signup <email>"   "Email a signup link (POST /api/keys)"
+  _action "user get <email>"      "Fetch the user record (GET /api/user)"
+  _action "user update <email>"   "Update name/timezone (PUT /api/user) — flags below"
+  _action "user delete <email>"   "Delete + wipe KV (DELETE /api/user) — needs --confirm"
+  _action "user list"             "Enumerate all users (SMEMBERS users)"
+}
+
 show_help() {
   echo ""
-  echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<env>${C_RESET} ${C_CYAN}<subgroup>${C_RESET} <action> [args]"
+  echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<env|user>${C_RESET} ${C_CYAN}<subgroup>${C_RESET} <action> [args]"
   echo ""
   show_help_prod
   echo ""
   show_help_local
+  echo ""
+  show_help_user
   echo ""
 }
 
@@ -198,6 +214,92 @@ Restart \`pnpm dev\` so the dev server picks up the new value.
 EOF
     exit 1
   fi
+}
+
+# Required by all `./fd.sh user *` actions: the prod Upstash KV REST credentials
+# (used to look up apiKey from email so we can Bearer-authenticate against
+# /api/user, plus for `user list` SMEMBERS). Same vars the prod app reads.
+require_prod_kv_creds() {
+  if [[ -z "${KV_REST_API_URL:-}" || -z "${KV_REST_API_TOKEN:-}" ]]; then
+    err "KV_REST_API_URL or KV_REST_API_TOKEN missing from .env.local."
+    cat >&2 <<EOF
+
+User-management actions need direct KV access (to resolve email → apiKey
+before Bearer-authenticating against /api/user). Pull from Vercel:
+
+  vercel env pull .env.local --environment=production --yes
+
+Or set manually:
+  KV_REST_API_URL=https://<your-upstash>.upstash.io
+  KV_REST_API_TOKEN=<your-token>
+EOF
+    exit 1
+  fi
+}
+
+require_jq() {
+  if ! have jq; then
+    err "jq is required for user-management actions (JSON parsing)."
+    echo "    Install with: brew install jq" >&2
+    exit 1
+  fi
+}
+
+# ── KV REST helpers (Upstash) ──────────────────────────────────────────────
+# Simple GET-by-key against the prod Upstash REST API. The TypeScript client
+# stores objects as JSON strings; this returns that raw string for the caller
+# to parse. Empty string on miss (consistent with the existing get → null
+# semantics in the codebase).
+kv_get() {
+  local key="$1"
+  local response
+  response=$(curl -sS --max-time 10 \
+    -H "Authorization: Bearer $KV_REST_API_TOKEN" \
+    "$KV_REST_API_URL/get/$key") || return 1
+  echo "$response" | jq -r '.result // empty'
+}
+
+# SMEMBERS — returns each set member on its own line (or empty for missing/empty).
+kv_smembers() {
+  local set_key="$1"
+  curl -sS --max-time 10 \
+    -H "Authorization: Bearer $KV_REST_API_TOKEN" \
+    "$KV_REST_API_URL/smembers/$set_key" | jq -r '.result[]? // empty'
+}
+
+# Resolve a user's apiKey by their email. Two KV reads (`email:{email}` →
+# userId, then `user:{userId}` → record).  Echoes the apiKey on stdout; exits
+# with a clear error on miss or corruption.
+_resolve_apikey_for_email() {
+  local email="$1"
+  local email_lc
+  email_lc=$(echo "$email" | tr '[:upper:]' '[:lower:]')
+
+  local user_id
+  user_id=$(kv_get "email:$email_lc")
+  if [[ -z "$user_id" ]]; then
+    err "no user found for email: $email"
+    echo "    (signup first: ./fd.sh user signup $email)" >&2
+    exit 1
+  fi
+
+  local user_json
+  user_json=$(kv_get "user:$user_id")
+  if [[ -z "$user_json" ]]; then
+    err "user record missing for $email (userId=$user_id) — KV inconsistency"
+    exit 1
+  fi
+
+  local api_key
+  # `fromjson?` parses if the result is a JSON string (Upstash's typical
+  # storage form for objects); falls through to direct lookup if already
+  # parsed.
+  api_key=$(echo "$user_json" | jq -r 'if type == "string" then fromjson else . end | .apiKey // empty')
+  if [[ -z "$api_key" ]]; then
+    err "apiKey missing on user record for $email"
+    exit 1
+  fi
+  echo "$api_key"
 }
 
 # ── Dev-server lifecycle helpers ───────────────────────────────────────────
@@ -288,6 +390,38 @@ post_with_bearer() {
   echo
 }
 
+# Captures the response body too (for tests / chaining). Stores body in
+# global LAST_RESPONSE_BODY alongside LAST_HTTP_CODE. Quieter than
+# post_with_bearer — caller is responsible for any pretty-printing.
+LAST_RESPONSE_BODY=""
+_request_with_bearer() {
+  local method="$1" url="$2" bearer="$3"
+  local body="${4:-}"
+  local tmp
+  tmp=$(mktemp)
+  # shellcheck disable=SC2064
+  trap "rm -f '$tmp'" EXIT
+
+  if [[ -n "$body" ]]; then
+    LAST_HTTP_CODE=$(curl -sS --max-time 30 -o "$tmp" -w "%{http_code}" \
+      -X "$method" "$url" \
+      -H "Authorization: Bearer $bearer" \
+      -H 'content-type: application/json' \
+      --data "$body") || {
+        err "curl failed (network error or timeout)"
+        exit 1
+      }
+  else
+    LAST_HTTP_CODE=$(curl -sS --max-time 30 -o "$tmp" -w "%{http_code}" \
+      -X "$method" "$url" \
+      -H "Authorization: Bearer $bearer") || {
+        err "curl failed (network error or timeout)"
+        exit 1
+      }
+  fi
+  LAST_RESPONSE_BODY=$(cat "$tmp")
+}
+
 # ── Shared action implementations ──────────────────────────────────────────
 # Each `_impl_*` carries the logic; per-env wrappers below set the right URL
 # + secret + display label and delegate here.
@@ -297,7 +431,7 @@ _impl_user_signup() {
   local base_url="$1" email="$2"
   if [[ -z "$email" ]]; then
     err "missing email"
-    echo "    usage: ./fd.sh {prod|local} user signup <email>" >&2
+    echo "    usage: ./fd.sh user signup <email>" >&2
     exit 64
   fi
   if ! looks_like_email "$email"; then
@@ -397,15 +531,226 @@ _impl_cache_revalidate() {
   esac
 }
 
+# ── User management implementations (#89, prod-only) ──────────────────────
+# All `_impl_user_*` actions hit prod and authenticate via Bearer apiKey
+# (resolved from KV). They share the same "resolve email → apiKey → request"
+# preamble, so each impl owns just its request + response handling.
+
+# _impl_user_get <email>
+_impl_user_get() {
+  local email="${1:-}"
+  if [[ -z "$email" ]]; then
+    err "missing email"
+    echo "    usage: ./fd.sh user get <email>" >&2
+    exit 64
+  fi
+  if ! looks_like_email "$email"; then
+    err "'$email' doesn't look like a valid email"
+    exit 64
+  fi
+
+  local api_key
+  api_key=$(_resolve_apikey_for_email "$email")
+
+  log "GET ${FD_PROD_BASE_URL}/api/user"
+  echo "  $(dim "as: $email")"
+  echo
+
+  _request_with_bearer "GET" "${FD_PROD_BASE_URL%/}/api/user" "$api_key"
+
+  echo "$(dim "← HTTP $LAST_HTTP_CODE")"
+  echo "$LAST_RESPONSE_BODY" | pretty_json
+  echo
+
+  case "$LAST_HTTP_CODE" in
+    200) ok "Fetched user record for $email" ;;
+    401) err "Unauthorized — apiKey rejected (KV inconsistency? rotate?)" ; exit 1 ;;
+    404) err "User record missing server-side (KV inconsistency)" ; exit 1 ;;
+    *)   err "Unexpected response $LAST_HTTP_CODE" ; exit 1 ;;
+  esac
+}
+
+# _impl_user_update <email> [--name X] [--timezone Y]
+_impl_user_update() {
+  local email="${1:-}"
+  if [[ -z "$email" ]]; then
+    err "missing email"
+    echo "    usage: ./fd.sh user update <email> [--name X] [--timezone Y]" >&2
+    exit 64
+  fi
+  if ! looks_like_email "$email"; then
+    err "'$email' doesn't look like a valid email"
+    exit 64
+  fi
+  shift
+
+  local new_name="" new_tz=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name)     [[ -n "${2:-}" ]] || { err "--name requires a value"; exit 64; }
+                  new_name="$2"; shift 2 ;;
+      --timezone) [[ -n "${2:-}" ]] || { err "--timezone requires a value"; exit 64; }
+                  new_tz="$2"; shift 2 ;;
+      *) err "unknown flag: $1"
+         echo "    usage: ./fd.sh user update <email> [--name X] [--timezone Y]" >&2
+         exit 64 ;;
+    esac
+  done
+
+  if [[ -z "$new_name" && -z "$new_tz" ]]; then
+    err "specify at least one of --name or --timezone"
+    exit 64
+  fi
+
+  # Build body manually (jq -n is required + slightly more verbose for this).
+  local body parts=()
+  [[ -n "$new_name" ]] && parts+=("\"name\":\"$new_name\"")
+  [[ -n "$new_tz"   ]] && parts+=("\"timezone\":\"$new_tz\"")
+  local IFS=,
+  body="{${parts[*]}}"
+
+  local api_key
+  api_key=$(_resolve_apikey_for_email "$email")
+
+  log "PUT ${FD_PROD_BASE_URL}/api/user"
+  echo "  $(dim "as:   $email")"
+  echo "  $(dim "body: $body")"
+  echo
+
+  _request_with_bearer "PUT" "${FD_PROD_BASE_URL%/}/api/user" "$api_key" "$body"
+
+  echo "$(dim "← HTTP $LAST_HTTP_CODE")"
+  echo "$LAST_RESPONSE_BODY" | pretty_json
+  echo
+
+  case "$LAST_HTTP_CODE" in
+    200) ok "Updated user record for $email" ;;
+    400) err "Validation rejected — see body above (strict Zod: name 1-80 chars, timezone 1-64)"
+         exit 1 ;;
+    401) err "Unauthorized — apiKey rejected" ; exit 1 ;;
+    *)   err "Unexpected response $LAST_HTTP_CODE" ; exit 1 ;;
+  esac
+}
+
+# _impl_user_delete <email> --confirm <email>
+_impl_user_delete() {
+  local email="${1:-}"
+  if [[ -z "$email" ]]; then
+    err "missing email"
+    echo "    usage: ./fd.sh user delete <email> --confirm <email>" >&2
+    exit 64
+  fi
+  if ! looks_like_email "$email"; then
+    err "'$email' doesn't look like a valid email"
+    exit 64
+  fi
+  shift
+
+  # Require `--confirm <email>` matching the target — mirrors /api/user
+  # DELETE's `confirmEmail` body requirement; same friction, same protection.
+  local confirm=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --confirm) [[ -n "${2:-}" ]] || { err "--confirm requires the email to confirm"; exit 64; }
+                 confirm="$2"; shift 2 ;;
+      *) err "unknown flag: $1"
+         echo "    usage: ./fd.sh user delete <email> --confirm <email>" >&2
+         exit 64 ;;
+    esac
+  done
+
+  if [[ -z "$confirm" ]]; then
+    err "destructive — must pass --confirm <email> matching the target"
+    echo "    usage: ./fd.sh user delete <email> --confirm $email" >&2
+    exit 64
+  fi
+  if [[ "$confirm" != "$email" ]]; then
+    err "--confirm value doesn't match target email"
+    echo "    got:    $confirm" >&2
+    echo "    target: $email" >&2
+    exit 64
+  fi
+
+  local api_key
+  api_key=$(_resolve_apikey_for_email "$email")
+
+  local body
+  body="{\"confirmEmail\":\"$email\"}"
+
+  log "DELETE ${FD_PROD_BASE_URL}/api/user"
+  echo "  $(dim "as:   $email")"
+  echo "  $(dim "body: $body")"
+  echo
+
+  _request_with_bearer "DELETE" "${FD_PROD_BASE_URL%/}/api/user" "$api_key" "$body"
+
+  echo "$(dim "← HTTP $LAST_HTTP_CODE")"
+  [[ -n "$LAST_RESPONSE_BODY" ]] && echo "$LAST_RESPONSE_BODY" | pretty_json
+  echo
+
+  case "$LAST_HTTP_CODE" in
+    204) ok "Deleted user $email + all KV state (user/email/slug/key/config + users-set)" ;;
+    400) err "Confirmation mismatch (server-side check failed)" ; exit 1 ;;
+    401) err "Unauthorized — apiKey rejected" ; exit 1 ;;
+    404) err "User already missing server-side" ; exit 1 ;;
+    *)   err "Unexpected response $LAST_HTTP_CODE" ; exit 1 ;;
+  esac
+}
+
+# _impl_user_list — SMEMBERS users + per-user GET. No pagination yet (we have
+# a few users; if this grows past ~50 we'll add --limit and chunked GET).
+_impl_user_list() {
+  log "Listing all users (SMEMBERS users)"
+  echo
+
+  local user_ids
+  user_ids=$(kv_smembers "users")
+  if [[ -z "$user_ids" ]]; then
+    warn "No users found in the 'users' set"
+    return 0
+  fi
+
+  local count=0
+  # Header + ASCII separator. Unicode em-dashes break `printf %-30s` padding
+  # because printf counts bytes, not characters (em-dash = 3 bytes UTF-8).
+  printf "  %-30s  %-10s  %s\n" "email" "slug" "created"
+  printf "  %-30s  %-10s  %s\n" "------------------------------" "----------" "----------"
+  while IFS= read -r uid; do
+    [[ -z "$uid" ]] && continue
+    local rec
+    rec=$(kv_get "user:$uid")
+    if [[ -z "$rec" ]]; then
+      printf "  %-30s  %-10s  %s\n" "$(dim "(missing user:$uid)")" "" ""
+      continue
+    fi
+    # Parse: handle both string-wrapped JSON (Upstash client default) and raw.
+    local email slug created
+    email=$(echo "$rec"   | jq -r 'if type == "string" then fromjson else . end | .email     // "?"')
+    slug=$(echo "$rec"    | jq -r 'if type == "string" then fromjson else . end | .slug      // "?"')
+    created=$(echo "$rec" | jq -r 'if type == "string" then fromjson else . end | .createdAt // "?"')
+    printf "  %-30s  %-10s  %s\n" "$email" "$slug" "${created:0:10}"
+    ((count++))
+  done <<< "$user_ids"
+
+  echo
+  ok "$count user(s)"
+}
+
 # ── Per-env wrappers (thin) ────────────────────────────────────────────────
 
-prod_user_signup()        { require_curl; _impl_user_signup "$FD_PROD_BASE_URL" "${1:-}"; }
-prod_cache_refresh()          { require_curl; require_prod_secret; _impl_cache_refresh "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod"; }
-prod_cache_revalidate()  { require_curl; require_prod_secret; _impl_cache_revalidate "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod" "${1:-}"; }
+prod_cache_refresh()      { require_curl; require_prod_secret; _impl_cache_refresh "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod"; }
+prod_cache_revalidate()   { require_curl; require_prod_secret; _impl_cache_revalidate "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod" "${1:-}"; }
 
-local_user_signup()       { require_curl; _impl_user_signup "$FD_LOCAL_BASE_URL" "${1:-}"; }
-local_cache_refresh()         { require_curl; require_local_cron_secret; _impl_cache_refresh "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local"; }
-local_cache_revalidate() { require_curl; require_local_cron_secret; _impl_cache_revalidate "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local" "${1:-}"; }
+local_cache_refresh()     { require_curl; require_local_cron_secret; _impl_cache_refresh "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local"; }
+local_cache_revalidate()  { require_curl; require_local_cron_secret; _impl_cache_revalidate "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local" "${1:-}"; }
+
+# Top-level `user` section (prod-only; #89). All require jq + KV creds for
+# the apiKey lookup. Signup is the lone exception (only needs curl).
+user_signup() { require_curl; _impl_user_signup "$FD_PROD_BASE_URL" "${1:-}"; }
+user_get()    { require_curl; require_jq; require_prod_kv_creds; _impl_user_get    "$@"; }
+user_update() { require_curl; require_jq; require_prod_kv_creds; _impl_user_update "$@"; }
+user_delete() { require_curl; require_jq; require_prod_kv_creds; _impl_user_delete "$@"; }
+user_list()   { require_curl; require_jq; require_prod_kv_creds; _impl_user_list   "$@"; }
 
 # ── Local server lifecycle actions (local-only; prod is Vercel) ────────────
 
@@ -613,24 +958,6 @@ _subgroup_help() {
   echo ""
 }
 
-prod_user_dispatch() {
-  local action="${1:-}"
-  if [[ -z "$action" ]]; then
-    err "prod user: missing action"
-    echo "    available: signup, help" >&2
-    exit 64
-  fi
-  shift
-  case "$action" in
-    signup) prod_user_signup "$@" ;;
-    help)   _subgroup_help "prod user" \
-              "signup <email>" "Email yourself a signup link" ;;
-    *) err "unknown prod user action: $action"
-       echo "    available: signup, help" >&2
-       exit 64 ;;
-  esac
-}
-
 prod_cache_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
@@ -647,24 +974,6 @@ prod_cache_dispatch() {
                     "revalidate [userId]" "Revalidate page ISR only" ;;
     *) err "unknown prod cache action: $action"
        echo "    available: refresh, revalidate, help" >&2
-       exit 64 ;;
-  esac
-}
-
-local_user_dispatch() {
-  local action="${1:-}"
-  if [[ -z "$action" ]]; then
-    err "local user: missing action"
-    echo "    available: signup, help" >&2
-    exit 64
-  fi
-  shift
-  case "$action" in
-    signup) local_user_signup "$@" ;;
-    help)   _subgroup_help "local user" \
-              "signup <email>" "Email yourself a signup link (against dev)" ;;
-    *) err "unknown local user action: $action"
-       echo "    available: signup, help" >&2
        exit 64 ;;
   esac
 }
@@ -723,16 +1032,18 @@ prod_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "prod: missing subgroup"
-    echo "    available: user, cache, help" >&2
+    echo "    available: cache, help" >&2
+    echo "    (user management moved to top-level: ./fd.sh user help)" >&2
     exit 64
   fi
   shift
   case "$sub" in
-    user)  prod_user_dispatch "$@" ;;
     cache) prod_cache_dispatch "$@" ;;
     help)  echo ""; show_help_prod; echo "" ;;
+    user)  err "user is no longer under prod (#89) — use: ./fd.sh user $*"
+           exit 64 ;;
     *) err "unknown prod subgroup: $sub"
-       echo "    available: user, cache, help" >&2
+       echo "    available: cache, help" >&2
        exit 64 ;;
   esac
 }
@@ -741,17 +1052,46 @@ local_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "local: missing subgroup"
-    echo "    available: server, user, cache, help" >&2
+    echo "    available: server, cache, help" >&2
     exit 64
   fi
   shift
   case "$sub" in
     server) local_server_dispatch "$@" ;;
-    user)   local_user_dispatch "$@" ;;
     cache)  local_cache_dispatch "$@" ;;
     help)   echo ""; show_help_local; echo "" ;;
+    user)   err "user is no longer under local (#89) — local has no user management (uses seeded static key)."
+            echo "    For prod user ops: ./fd.sh user help" >&2
+            exit 64 ;;
     *) err "unknown local subgroup: $sub"
-       echo "    available: server, user, cache, help" >&2
+       echo "    available: server, cache, help" >&2
+       exit 64 ;;
+  esac
+}
+
+# Top-level `user` dispatcher (#89). Prod-implicit — no env prefix.
+user_dispatch() {
+  local action="${1:-}"
+  if [[ -z "$action" ]]; then
+    err "user: missing action"
+    echo "    available: signup, get, update, delete, list, help" >&2
+    exit 64
+  fi
+  shift
+  case "$action" in
+    signup) user_signup "$@" ;;
+    get)    user_get    "$@" ;;
+    update) user_update "$@" ;;
+    delete) user_delete "$@" ;;
+    list)   user_list   "$@" ;;
+    help)   _subgroup_help "user  (prod-only)" \
+              "signup <email>"  "Email a signup link" \
+              "get <email>"     "Fetch the user record" \
+              "update <email>"  "Update fields: --name X / --timezone Y" \
+              "delete <email>"  "Delete + wipe KV: --confirm <email>" \
+              "list"            "Enumerate all users" ;;
+    *) err "unknown user action: $action"
+       echo "    available: signup, get, update, delete, list, help" >&2
        exit 64 ;;
   esac
 }
@@ -780,8 +1120,9 @@ shift
 case "$env" in
   prod)  prod_dispatch "$@" ;;
   local) local_dispatch "$@" ;;
+  user)  user_dispatch "$@" ;;
   *) err "unknown env: $env"
-     echo "    available: prod, local" >&2
+     echo "    available: prod, local, user" >&2
      echo "    run ./fd.sh --help for the full surface" >&2
      exit 64 ;;
 esac
