@@ -26,22 +26,30 @@ beforeEach(() => {
 describe('pickWord', () => {
   it('is deterministic by day', () => {
     const d = new Date('2026-05-15T12:00:00Z');
-    expect(pickWord(d)).toBe(pickWord(d));
+    expect(pickWord(d)).toEqual(pickWord(d));
   });
 
-  it('cycles through the WORDS list — every word can be picked', () => {
+  it('cycles through the WORDS list — every entry can be picked', () => {
     // Probe ~600 days; verify we see every word
     const seen = new Set<string>();
     for (let i = 0; i < WORDS.length * 3; i++) {
       const d = new Date(2026, 0, i + 1);
-      seen.add(pickWord(d));
+      seen.add(pickWord(d).word);
     }
     expect(seen.size).toBe(WORDS.length);
+  });
+
+  it('every WORDS entry has a non-empty definition (#87 offline data integrity)', () => {
+    for (const entry of WORDS) {
+      expect(entry.word).toMatch(/^[a-z]+$/);
+      expect(entry.partOfSpeech).toMatch(/^(noun|verb|adjective|adverb)$/);
+      expect(entry.definition.length).toBeGreaterThan(10);
+    }
   });
 });
 
 describe('fetchWord', () => {
-  it('maps the dictionary response to TextItem', async () => {
+  it('maps the dictionary response to TextItem (upstream success path)', async () => {
     server.use(
       http.get('https://api.dictionaryapi.dev/api/v2/entries/en/*', () =>
         HttpResponse.json([
@@ -65,14 +73,40 @@ describe('fetchWord', () => {
       expect(res.data.attribution).toMatch(/\(noun\)/);
       expect(res.data.attribution).toMatch(/\/ˈtɛst\//);
       expect(res.data.sourceLabel).toBe('via Free Dictionary API');
+      expect(res.data.offline).toBeUndefined(); // upstream success → no offline flag
     }
   });
 
-  it('missing definition → could-not-load', async () => {
+  it('upstream failure → offline fallback with offline=true marker (#87)', async () => {
+    server.use(
+      http.get('https://api.dictionaryapi.dev/api/v2/entries/en/*', () => HttpResponse.error()),
+    );
+
+    const date = new Date('2026-05-15T12:00:00Z');
+    const expected = pickWord(date);
+    const res = await fetchWord(date);
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.body).toBe(expected.definition);
+      expect(res.data.attribution).toBe(`${expected.word} (${expected.partOfSpeech})`);
+      expect(res.data.sourceLabel).toBe('offline word list');
+      expect(res.data.offline).toBe(true);
+    }
+  });
+
+  it('upstream returned but no usable definition → also falls back to offline (#87)', async () => {
     server.use(
       http.get('https://api.dictionaryapi.dev/api/v2/entries/en/*', () => HttpResponse.json([])),
     );
-    const res = await fetchWord();
-    expect(res.ok).toBe(false);
+    const date = new Date('2026-05-15T12:00:00Z');
+    const expected = pickWord(date);
+    const res = await fetchWord(date);
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.offline).toBe(true);
+      expect(res.data.body).toBe(expected.definition);
+    }
   });
 });

@@ -66,7 +66,12 @@ export function TextWidget({ widget, data, fetchedAt }: Props) {
               )}
             </div>
           )}
-          {data.sourceLabel && <div className="text-source">{data.sourceLabel}</div>}
+          {data.sourceLabel && (
+            <div className="text-source">
+              {data.sourceLabel}
+              {data.offline && <span className="text-offline-marker"> (offline)</span>}
+            </div>
+          )}
           <StaleCaption fetchedAt={fetchedAt} />
         </>
       )}
