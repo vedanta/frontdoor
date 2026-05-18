@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   apiKeyKey,
+  bootstrapKey,
   emailKey,
   slugKey,
   userKey,
@@ -35,6 +36,10 @@ describe('KV key helpers', () => {
 
   it('configKey', () => {
     expect(configKey('u_42')).toBe('config:u_42');
+  });
+
+  it('bootstrapKey (#73)', () => {
+    expect(bootstrapKey('fdb_abc123')).toBe('bootstrap:fdb_abc123');
   });
 
   describe('sourceKey', () => {

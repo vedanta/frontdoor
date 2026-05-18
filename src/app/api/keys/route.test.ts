@@ -51,7 +51,16 @@ vi.mock('@/lib/ratelimit', () => ({
 
 import { POST } from './route';
 import { NextRequest } from 'next/server';
-import { apiKeyKey, configKey, emailKey, slugKey, USERS_SET, userKey } from '@/lib/kv';
+import {
+  apiKeyKey,
+  bootstrapKey,
+  configKey,
+  emailKey,
+  slugKey,
+  USERS_SET,
+  userKey,
+  type BootstrapRecord,
+} from '@/lib/kv';
 import { DEFAULT_CONFIG } from '@/lib/config';
 
 function postReq(body: unknown): NextRequest {
@@ -68,8 +77,15 @@ beforeEach(() => {
   sentEmails.length = 0;
 });
 
+/** Extract the bootstrap token from an emailed URL like `…/?bootstrap=fdb_…`. */
+function tokenFromUrl(url: string): string {
+  const m = url.match(/[?&]bootstrap=([^&]+)/);
+  if (!m) throw new Error(`no bootstrap token in url: ${url}`);
+  return m[1];
+}
+
 describe('POST /api/keys', () => {
-  it('new email: mints + seeds KV + sends email; never returns the key in HTTP', async () => {
+  it('new email: mints + seeds KV + sends ?bootstrap= URL; apiKey never in URL', async () => {
     const res = await POST(postReq({ email: 'New@Example.com' }));
     expect(res.status).toBe(202);
     expect(await res.json()).toEqual({ status: 'check your email' });
@@ -78,9 +94,14 @@ describe('POST /api/keys', () => {
     expect(sentEmails).toHaveLength(1);
     expect(sentEmails[0].to).toBe('new@example.com'); // lowercased
     expect(sentEmails[0].key).toMatch(/^fd_[0-9a-f]{32}$/); // #72 — `fd_` prefix
-    expect(sentEmails[0].url).toContain('http://localhost:3000/?key=');
 
-    // KV written across all key spaces
+    // #73: URL contains ?bootstrap=fdb_…, NOT ?key=
+    expect(sentEmails[0].url).toMatch(/\?bootstrap=fdb_[0-9a-f]{32}$/);
+    expect(sentEmails[0].url).not.toContain('?key=');
+    // apiKey must not appear in the URL (the whole point of #73)
+    expect(sentEmails[0].url).not.toContain(sentEmails[0].key);
+
+    // KV written across all forever-key spaces
     const apiKey = sentEmails[0].key;
     const userId = (await fakeRedis.get(apiKeyKey(apiKey))) as string;
     expect(userId).toBeDefined();
@@ -90,18 +111,33 @@ describe('POST /api/keys', () => {
     expect(await fakeRedis.get(configKey(userId))).toEqual(DEFAULT_CONFIG);
     expect(await fakeRedis.get(slugKey((user as { slug: string }).slug))).toBe(userId);
     expect(kvSets.get(USERS_SET)?.has(userId)).toBe(true);
+
+    // #73: bootstrap:{token} written with the right shape
+    const token = tokenFromUrl(sentEmails[0].url);
+    const bootstrap = (await fakeRedis.get(bootstrapKey(token))) as BootstrapRecord;
+    expect(bootstrap).toMatchObject({ userId, slug: (user as { slug: string }).slug });
+    expect(bootstrap.exp).toBeGreaterThan(Date.now()); // future
+    expect(bootstrap.exp).toBeLessThan(Date.now() + 301_000); // within ~5min
   });
 
-  it('idempotent: known email re-sends the existing key (no new mint)', async () => {
+  it('idempotent: known email reuses apiKey but mints a FRESH bootstrap (#73)', async () => {
     await POST(postReq({ email: 'foo@example.com' }));
     const firstKey = sentEmails[0].key;
+    const firstToken = tokenFromUrl(sentEmails[0].url);
     const firstUserId = await fakeRedis.get(emailKey('foo@example.com'));
 
     sentEmails.length = 0;
     await POST(postReq({ email: 'Foo@Example.com' }));
 
     expect(sentEmails).toHaveLength(1);
-    expect(sentEmails[0].key).toBe(firstKey); // SAME key, not a new mint
+    // SAME apiKey (long-lived secret stays put)
+    expect(sentEmails[0].key).toBe(firstKey);
+    // DIFFERENT bootstrap token (the old one is single-use; can't be re-emailed)
+    const secondToken = tokenFromUrl(sentEmails[0].url);
+    expect(secondToken).not.toBe(firstToken);
+    // Both bootstrap records exist (Redis EX prunes them; both are valid until TTL)
+    expect(await fakeRedis.get(bootstrapKey(secondToken))).toMatchObject({ userId: firstUserId });
+
     expect(await fakeRedis.get(emailKey('foo@example.com'))).toBe(firstUserId);
     // users set size stays 1 — no duplicate userId
     expect(kvSets.get(USERS_SET)?.size).toBe(1);

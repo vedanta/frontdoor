@@ -49,6 +49,22 @@ export const userKey = (userId: string): string => `user:${userId}`;
 /** Redis SET of all `userId`s. Lets cron enumerate users to revalidate ISR. */
 export const USERS_SET = 'users';
 
+/**
+ * One-time bootstrap token (#73) → identity wrapper. Set with Redis `EX` so
+ * the key auto-prunes; the embedded `exp` is a defensive second check at
+ * read time. Single-use: middleware `DEL`s the key after a successful
+ * exchange so a second visit returns 410.
+ */
+export type BootstrapRecord = {
+  userId: string;
+  slug: string;
+  /** Unix milliseconds. Defensive — Redis `EX` is the primary expiry. */
+  exp: number;
+};
+
+/** `bootstrap:{token}` → `BootstrapRecord` (JSON). TTL-d via `EX`. */
+export const bootstrapKey = (token: string): string => `bootstrap:${token}`;
+
 // === Per-user config ===
 
 /** `config:{userId}` → dashboard config JSON (shape in design/05-config-schema.md). */

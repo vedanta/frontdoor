@@ -6,9 +6,15 @@
  *
  * Behavior:
  *   - Email validated; lowercased on storage / lookup.
- *   - Idempotent: a known email re-sends the existing key (no new mint).
- *   - New user: mints apiKey + userId + slug; seeds DEFAULT_CONFIG;
- *     writes every KV key space (incl. SADD users); sends email.
+ *   - Idempotent: a known email re-uses the existing apiKey BUT mints a
+ *     FRESH bootstrap token (the old one is single-use + TTL'd; re-using it
+ *     would be invalid). The long-lived apiKey is never rotated here.
+ *   - New user: mints apiKey + userId + slug + bootstrapToken; seeds
+ *     DEFAULT_CONFIG; writes every KV key space (incl. SADD users) plus the
+ *     bootstrap:{token} entry with `BOOTSTRAP_TOKEN_TTL_SEC` expiry (#73).
+ *   - Email contains the `?bootstrap=` URL (not `?key=`) — apiKey only flows
+ *     through Bearer/curl from here on; middleware keeps `?key=` for 60 days
+ *     as a backwards-compat fallback for emails sent before this change.
  *
  * See docs/architecture.md §3.1 for the canonical flow.
  * Rate-limited on both IP and email (#21).
@@ -17,17 +23,24 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
   apiKeyKey,
+  bootstrapKey,
   configKey,
   emailKey,
   getRedis,
   slugKey,
   USERS_SET,
   userKey,
+  type BootstrapRecord,
   type UserRecord,
 } from '@/lib/kv';
 import { DEFAULT_CONFIG } from '@/lib/config';
 import { sendKeyEmail } from '@/lib/email';
-import { buildKeyUrl, mintIds } from '@/lib/signup/mint';
+import {
+  BOOTSTRAP_TOKEN_TTL_SEC,
+  buildBootstrapUrl,
+  mintBootstrapToken,
+  mintIds,
+} from '@/lib/signup/mint';
 import { clientIp, emailLimiter, ipLimiter } from '@/lib/ratelimit';
 
 const SignupBody = z.object({
@@ -65,22 +78,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const redis = getRedis();
   const origin = req.nextUrl.origin;
 
-  // Idempotency: known email → re-send existing key, no new mint
+  /**
+   * Persist a fresh bootstrap token for an existing identity (new signup or
+   * re-signup). Returns the URL to embed in the email.
+   *
+   * Set with Redis `EX` so the key auto-prunes; embedded `exp` field is a
+   * defensive second check in middleware.
+   */
+  async function issueBootstrap(forUserId: string, forSlug: string): Promise<string> {
+    const token = mintBootstrapToken();
+    const exp = Date.now() + BOOTSTRAP_TOKEN_TTL_SEC * 1000;
+    const record: BootstrapRecord = { userId: forUserId, slug: forSlug, exp };
+    await redis.set(bootstrapKey(token), record, { ex: BOOTSTRAP_TOKEN_TTL_SEC });
+    return buildBootstrapUrl(token, origin);
+  }
+
+  // Idempotency: known email → re-issue a fresh bootstrap; reuse the long-lived
+  // apiKey + identity (#73, design call: "fresh bootstrap only").
   const existingUserId = await redis.get<string>(emailKey(email));
   if (existingUserId) {
     const user = await redis.get<UserRecord>(userKey(existingUserId));
-    if (user?.apiKey) {
-      await sendKeyEmail({
-        to: email,
-        key: user.apiKey,
-        url: buildKeyUrl(user.apiKey, origin),
-      });
+    if (user?.apiKey && user.slug) {
+      const url = await issueBootstrap(existingUserId, user.slug);
+      await sendKeyEmail({ to: email, key: user.apiKey, url });
       return NextResponse.json(ACCEPTED, { status: 202 });
     }
     // Corrupt user record — fall through and mint fresh. (Very unlikely.)
   }
 
-  // New user
+  // New user — mint full identity (apiKey + ids) plus the first bootstrap.
   const { apiKey, userId, slug } = mintIds();
   const createdAt = new Date().toISOString();
   const user: UserRecord = { email, apiKey, slug, createdAt };
@@ -94,7 +120,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     redis.sadd(USERS_SET, userId),
   ]);
 
-  await sendKeyEmail({ to: email, key: apiKey, url: buildKeyUrl(apiKey, origin) });
+  const url = await issueBootstrap(userId, slug);
+  await sendKeyEmail({ to: email, key: apiKey, url });
 
   return NextResponse.json(ACCEPTED, { status: 202 });
 }
