@@ -32,7 +32,16 @@ vi.mock('../src/lib/kv', async (importOriginal) => {
 });
 
 import { seedUser } from './seed-test-user';
-import { apiKeyKey, configKey, emailKey, slugKey, USERS_SET, userKey } from '../src/lib/kv';
+import {
+  apiKeyKey,
+  bootstrapKey,
+  configKey,
+  emailKey,
+  slugKey,
+  USERS_SET,
+  userKey,
+  type BootstrapRecord,
+} from '../src/lib/kv';
 import { DEFAULT_CONFIG } from '../src/lib/config';
 
 beforeEach(() => {
@@ -59,6 +68,12 @@ describe('seedUser', () => {
     });
     expect(await fakeRedis.get(configKey('u_dev_local'))).toEqual(DEFAULT_CONFIG);
     expect(kvSets.get(USERS_SET)?.has('u_dev_local')).toBe(true);
+
+    // #73 — bootstrap token seeded with a long TTL
+    expect(result.bootstrapToken).toMatch(/^fdb_[0-9a-f]{32}$/);
+    const bootstrap = (await fakeRedis.get(bootstrapKey(result.bootstrapToken))) as BootstrapRecord;
+    expect(bootstrap).toMatchObject({ userId: 'u_dev_local', slug: result.slug });
+    expect(bootstrap.exp).toBeGreaterThan(Date.now());
   });
 
   it('respects overrides', async () => {

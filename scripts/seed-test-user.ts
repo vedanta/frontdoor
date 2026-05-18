@@ -12,6 +12,13 @@
  *   --name      dev user                              (#69 — display name)
  *   --timezone  America/New_York                      (#69 — IANA tz)
  *
+ * Also writes a long-TTL bootstrap token (#73) at
+ *   `bootstrap:fdb_deadbeefdeadbeefdeadbeefdeadbeef`
+ * so E2E can test the new `?bootstrap=` flow with a known token. The seed
+ * uses TTL=24h (vs prod's 5min) so it lives long enough for a test session.
+ * Single-use semantics still apply — each E2E run consumes it; global-setup
+ * re-runs the seed before every session.
+ *
  * Idempotent. Re-running with the same args overwrites cleanly. The script
  * also exports `seedUser(...)` so Playwright fixtures (e2e/global-setup.ts)
  * can call it directly without spawning a subprocess.
@@ -49,12 +56,14 @@ import { parseArgs } from 'node:util';
 
 import {
   apiKeyKey,
+  bootstrapKey,
   configKey,
   emailKey,
   getRedis,
   slugKey,
   USERS_SET,
   userKey,
+  type BootstrapRecord,
   type UserRecord,
 } from '../src/lib/kv';
 import { DEFAULT_CONFIG } from '../src/lib/config';
@@ -71,7 +80,14 @@ const DEFAULTS = {
   // assert on specific values; harmless to existing E2E that ignores them.
   name: 'dev user',
   timezone: 'America/New_York',
+  // #73 — bootstrap token seeded with long TTL so E2E can exercise
+  // ?bootstrap= flow with a known value. Single-use semantics still apply;
+  // global-setup re-runs the seed each session.
+  bootstrapToken: 'fdb_deadbeefdeadbeefdeadbeefdeadbeef',
 };
+
+/** TTL for the seeded bootstrap (#73) — 24h, vs prod's 5 min. */
+const SEED_BOOTSTRAP_TTL_SEC = 60 * 60 * 24;
 
 export type SeedArgs = {
   email?: string;
@@ -80,9 +96,10 @@ export type SeedArgs = {
   userId?: string;
   name?: string;
   timezone?: string;
+  bootstrapToken?: string;
 };
 
-export type SeededUser = UserRecord & { userId: string };
+export type SeededUser = UserRecord & { userId: string; bootstrapToken: string };
 
 /**
  * Write the user + key + slug + config + users-set entries.
@@ -96,6 +113,7 @@ export async function seedUser(args: SeedArgs = {}): Promise<SeededUser> {
   const userId = args.userId ?? DEFAULTS.userId;
   const name = args.name ?? DEFAULTS.name;
   const timezone = args.timezone ?? DEFAULTS.timezone;
+  const bootstrapToken = args.bootstrapToken ?? DEFAULTS.bootstrapToken;
 
   const redis = getRedis();
   const user: UserRecord = {
@@ -106,6 +124,11 @@ export async function seedUser(args: SeedArgs = {}): Promise<SeededUser> {
     timezone,
     createdAt: new Date().toISOString(),
   };
+  const bootstrap: BootstrapRecord = {
+    userId,
+    slug,
+    exp: Date.now() + SEED_BOOTSTRAP_TTL_SEC * 1000,
+  };
 
   await Promise.all([
     redis.set(apiKeyKey(apiKey), userId),
@@ -114,9 +137,10 @@ export async function seedUser(args: SeedArgs = {}): Promise<SeededUser> {
     redis.set(userKey(userId), user),
     redis.set(configKey(userId), DEFAULT_CONFIG),
     redis.sadd(USERS_SET, userId),
+    redis.set(bootstrapKey(bootstrapToken), bootstrap, { ex: SEED_BOOTSTRAP_TTL_SEC }),
   ]);
 
-  return { ...user, userId };
+  return { ...user, userId, bootstrapToken };
 }
 
 async function main(): Promise<void> {
@@ -128,6 +152,7 @@ async function main(): Promise<void> {
       userId: { type: 'string' },
       name: { type: 'string' },
       timezone: { type: 'string' },
+      bootstrap: { type: 'string' },
     },
   });
 
@@ -138,18 +163,21 @@ async function main(): Promise<void> {
     userId: values.userId,
     name: values.name,
     timezone: values.timezone,
+    bootstrapToken: values.bootstrap,
   });
 
   console.log('✓ seeded test user');
-  console.log(`  email    : ${seeded.email}`);
-  console.log(`  userId   : ${seeded.userId}`);
-  console.log(`  slug     : ${seeded.slug}`);
-  console.log(`  apiKey   : ${seeded.apiKey}`);
-  console.log(`  name     : ${seeded.name}`);
-  console.log(`  timezone : ${seeded.timezone}`);
+  console.log(`  email     : ${seeded.email}`);
+  console.log(`  userId    : ${seeded.userId}`);
+  console.log(`  slug      : ${seeded.slug}`);
+  console.log(`  apiKey    : ${seeded.apiKey}`);
+  console.log(`  name      : ${seeded.name}`);
+  console.log(`  timezone  : ${seeded.timezone}`);
+  console.log(`  bootstrap : ${seeded.bootstrapToken}`);
   console.log('');
   console.log('open the dashboard:');
-  console.log(`  http://localhost:3000/?key=${seeded.apiKey}`);
+  console.log(`  http://localhost:3000/?bootstrap=${seeded.bootstrapToken}   (preferred, #73)`);
+  console.log(`  http://localhost:3000/?key=${seeded.apiKey}   (legacy, 60-day window)`);
 }
 
 // Only run main() when invoked as a script (not when imported from a test).
