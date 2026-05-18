@@ -116,12 +116,15 @@ _action()  { printf "    %s%-32s%s%s\n"  "$C_CYAN" "$1" "$C_RESET" "$2"; }
 # action (./fd.sh prod help, ./fd.sh local help).
 show_help_prod() {
   _section "Production" "($FD_PROD_BASE_URL · cache refresh runs daily 03:00 UTC)"
+  _action "status"                    "Health check — GET / + report code/time"
   _action "cache refresh"             "Warm data + revalidate pages (= /api/refresh)"
   _action "cache revalidate [userId]" "Revalidate page ISR only"
+  _action "cache purge <source>..."   "DEL today's cache keys for sources (or --all)"
 }
 
 show_help_local() {
   _section "Local" "($FD_LOCAL_BASE_URL · no schedule)"
+  _action "status"                    "Health check — GET / + report code/time"
   _action "server start"              "Start \`pnpm dev\` (background, PID tracked)"
   _action "server stop"               "Stop gracefully (SIGTERM)"
   _action "server restart"            "Stop + start"
@@ -130,6 +133,7 @@ show_help_local() {
   _action "server logs"               "tail -f the dev log"
   _action "cache refresh"             "Warm data + revalidate pages (against dev)"
   _action "cache revalidate [userId]" "Revalidate page ISR only (against dev)"
+  _action "cache purge <source>..."   "DEL today's cache keys (against prod KV)"
 }
 
 show_help_user() {
@@ -141,15 +145,24 @@ show_help_user() {
   _action "user list"             "Enumerate all users (SMEMBERS users)"
 }
 
+show_help_inspection() {
+  _section "Inspection" "(prod KV + NASA API · read-only diagnostics)"
+  _action "apod"                  "Ping NASA APOD — verify key + see today's image"
+  _action "kv keys [prefix]"      "List KV keys (default: all; e.g. \`kv keys user:\`)"
+  _action "kv get <key>"          "Print KV value (pretty-printed if JSON)"
+}
+
 show_help() {
   echo ""
-  echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<env|user>${C_RESET} ${C_CYAN}<subgroup>${C_RESET} <action> [args]"
+  echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<env|user|kv|apod>${C_RESET} ${C_CYAN}<subgroup>${C_RESET} <action> [args]"
   echo ""
   show_help_prod
   echo ""
   show_help_local
   echo ""
   show_help_user
+  echo ""
+  show_help_inspection
   echo ""
 }
 
@@ -239,8 +252,25 @@ EOF
 
 require_jq() {
   if ! have jq; then
-    err "jq is required for user-management actions (JSON parsing)."
+    err "jq is required for KV-backed actions (JSON parsing)."
     echo "    Install with: brew install jq" >&2
+    exit 1
+  fi
+}
+
+# Required by `./fd.sh apod` — direct NASA APOD ping for key verification.
+require_nasa_api_key() {
+  if [[ -z "${NASA_API_KEY:-}" ]]; then
+    err "NASA_API_KEY is not set in .env.local."
+    cat >&2 <<EOF
+
+Sign up at https://api.nasa.gov/ — it's free, instant, and the key arrives
+in your inbox. Add to .env.local as:
+  NASA_API_KEY=<your-key>
+
+(DEMO_KEY also works but is rate-limited globally; the dashboard uses
+it as a fallback. Sign up for your own to avoid the shared cap.)
+EOF
     exit 1
   fi
 }
@@ -265,6 +295,26 @@ kv_smembers() {
   curl -sS --max-time 10 \
     -H "Authorization: Bearer $KV_REST_API_TOKEN" \
     "$KV_REST_API_URL/smembers/$set_key" | jq -r '.result[]? // empty'
+}
+
+# KEYS — list keys matching a pattern. Pattern is a Redis glob (e.g. `*:2026-05-18`).
+# Returns each matching key on its own line. Note: Redis KEYS is O(N); fine at
+# our scale (low hundreds of keys total) but use SCAN if this grows.
+kv_keys() {
+  local pattern="${1:-*}"
+  # Upstash REST: /keys/{pattern}. URL-encode the pattern minimally (the only
+  # likely problematic char is `*` which is safe in URLs).
+  curl -sS --max-time 10 \
+    -H "Authorization: Bearer $KV_REST_API_TOKEN" \
+    "$KV_REST_API_URL/keys/$pattern" | jq -r '.result[]? // empty'
+}
+
+# DEL — delete a single key. Returns the count actually removed (0 if missing).
+kv_del() {
+  local key="$1"
+  curl -sS --max-time 10 \
+    -H "Authorization: Bearer $KV_REST_API_TOKEN" \
+    "$KV_REST_API_URL/del/$key" | jq -r '.result // 0'
 }
 
 # Resolve a user's apiKey by their email. Two KV reads (`email:{email}` →
@@ -531,6 +581,210 @@ _impl_cache_revalidate() {
   esac
 }
 
+# ── v0.3 inspection + cache-debugging implementations (#58) ───────────────
+
+# _impl_status <base_url> <env_label>
+# Discovery action — quick "is this env up?" check. Times a request to the
+# root path (which redirects to /fd/* logic via the proxy, or to GH Pages
+# marketing for prod). Reports HTTP code, total time, target URL.
+_impl_status() {
+  local base_url="$1" env_label="$2"
+  local url="${base_url%/}/"
+  log "Checking $env_label health"
+  echo "  $(dim "GET $url")"
+  echo
+
+  local out
+  out=$(curl -sS --max-time 10 -o /dev/null \
+    -w '%{http_code} %{time_total}\n' "$url" 2>&1) || {
+      err "Could not reach $url"
+      echo "    $(if [[ "$env_label" == "local" ]]; then echo "Dev server not running? ./fd.sh local server start"; else echo "Network or DNS issue? Try in a browser."; fi)" >&2
+      exit 1
+    }
+
+  local code time
+  code=$(echo "$out" | awk '{print $1}')
+  time=$(echo "$out" | awk '{print $2}')
+  # Format time as ms with 0 decimals (curl reports seconds with microsecond precision).
+  local ms
+  ms=$(awk "BEGIN { printf \"%d\", $time * 1000 }")
+
+  case "$code" in
+    2??)            ok  "$env_label up · HTTP $code · ${ms}ms" ;;
+    3??)            ok  "$env_label up · HTTP $code · ${ms}ms (redirect — expected for prod marketing rewrite)" ;;
+    4??|5??)        err "$env_label responded HTTP $code in ${ms}ms (unexpected)" ; exit 1 ;;
+    000)            err "No response from $url" ; exit 1 ;;
+    *)              err "Unexpected response $code" ; exit 1 ;;
+  esac
+}
+
+# _impl_apod — direct NASA APOD ping to verify the key + see today's image.
+# Reports title/date/media_type/url plus the rate-limit-remaining header.
+_impl_apod() {
+  log "GET https://api.nasa.gov/planetary/apod"
+  echo "  $(dim "key: <NASA_API_KEY>")"
+  echo
+
+  local tmp_body tmp_headers
+  tmp_body=$(mktemp); tmp_headers=$(mktemp)
+  # shellcheck disable=SC2064
+  trap "rm -f '$tmp_body' '$tmp_headers'" EXIT
+
+  local code
+  code=$(curl -sS --max-time 15 -o "$tmp_body" -D "$tmp_headers" -w "%{http_code}" \
+    "https://api.nasa.gov/planetary/apod?api_key=$NASA_API_KEY") || {
+      err "curl failed (network error or timeout)"
+      exit 1
+    }
+
+  echo "$(dim "← HTTP $code")"
+
+  case "$code" in
+    200)
+      # Pretty-print key fields then dump rate-limit headers.
+      jq -r '"  title       : \(.title)
+  date        : \(.date)
+  media_type  : \(.media_type)
+  url         : \(.url)"' < "$tmp_body" 2>/dev/null || pretty_json < "$tmp_body"
+      echo
+      local remaining limit
+      remaining=$(grep -i '^x-ratelimit-remaining:' "$tmp_headers" | awk '{print $2}' | tr -d '\r')
+      limit=$(grep -i '^x-ratelimit-limit:' "$tmp_headers" | awk '{print $2}' | tr -d '\r')
+      if [[ -n "$remaining" || -n "$limit" ]]; then
+        echo "  $(dim "rate-limit  : ${remaining:-?} / ${limit:-?} remaining")"
+        echo
+      fi
+      ok "NASA APOD key is valid"
+      ;;
+    403) err "Forbidden — NASA_API_KEY likely invalid or rate-limited"
+         pretty_json < "$tmp_body" ; exit 1 ;;
+    429) err "Rate-limited by NASA" ; exit 1 ;;
+    *)   err "Unexpected response $code"
+         pretty_json < "$tmp_body" ; exit 1 ;;
+  esac
+}
+
+# _impl_kv_keys [prefix]
+_impl_kv_keys() {
+  local prefix="${1:-}"
+  local pattern="${prefix}*"
+  log "Listing KV keys matching: $pattern"
+  echo
+
+  local keys count=0
+  keys=$(kv_keys "$pattern")
+  if [[ -z "$keys" ]]; then
+    warn "No keys match $pattern"
+    return 0
+  fi
+  # Print sorted for readable scanning.
+  echo "$keys" | sort | while IFS= read -r k; do
+    [[ -z "$k" ]] && continue
+    echo "  $k"
+    ((count++)) || true
+  done
+  count=$(echo "$keys" | grep -c .)
+  echo
+  ok "$count key(s)"
+}
+
+# _impl_kv_get <key>
+_impl_kv_get() {
+  local key="${1:-}"
+  if [[ -z "$key" ]]; then
+    err "missing key"
+    echo "    usage: ./fd.sh kv get <key>" >&2
+    exit 64
+  fi
+  log "GET kv: $key"
+  echo
+
+  local val
+  val=$(kv_get "$key")
+  if [[ -z "$val" ]]; then
+    warn "no value (key missing or empty)"
+    return 0
+  fi
+
+  # Try to parse + pretty-print as JSON (most stored values are JSON-encoded
+  # objects via the Upstash TS client). Fall through to raw if not JSON.
+  if echo "$val" | jq . >/dev/null 2>&1; then
+    echo "$val" | jq .
+  elif echo "$val" | jq 'fromjson' >/dev/null 2>&1; then
+    # Value is a JSON-encoded string holding another JSON object — common
+    # for our user/config records when stored via the TS client.
+    echo "$val" | jq 'fromjson'
+  else
+    echo "  $val"
+  fi
+  echo
+  ok "Got $key"
+}
+
+# _impl_cache_purge <base_url_unused> <date> <env_label> [source...] | --all
+# Purges today's date-stamped cache keys so the next /api/refresh re-fetches
+# upstream. The base_url is unused (this is a direct KV op) but kept for
+# symmetry with other _impl_* signatures.
+_impl_cache_purge() {
+  local _base_url="$1"; shift  # unused; KV ops bypass the app
+  local date="$1"; shift
+  local env_label="$1"; shift
+
+  if [[ $# -eq 0 ]]; then
+    err "missing sources"
+    cat >&2 <<EOF
+    usage: ./fd.sh $env_label cache purge <source>...   (one or more)
+           ./fd.sh $env_label cache purge --all          (every key dated $date)
+
+    Known sources (single-segment keys): nasa-apod, bing-daily, wikimedia-potd,
+                                         quote, poem, onthisday, wikipedia, word
+    Parameterized keys (caught by --all): headlines:{hash}:$date, weather:{lat,lon}:$date
+EOF
+    exit 64
+  fi
+
+  local keys=()
+  if [[ "$1" == "--all" ]]; then
+    log "Purging ALL date-stamped cache keys for $date ($env_label)"
+    echo "  $(dim "KV pattern: *:$date")"
+    # Pull all keys matching *:{date}. This catches both single-segment
+    # source keys (nasa-apod:DATE) and parameterized ones (headlines:HASH:DATE,
+    # weather:LAT,LON:DATE).
+    while IFS= read -r k; do
+      [[ -n "$k" ]] && keys+=("$k")
+    done < <(kv_keys "*:$date")
+  else
+    log "Purging cache keys for sources: $* ($env_label)"
+    for source in "$@"; do
+      keys+=("$source:$date")
+    done
+  fi
+
+  if (( ${#keys[@]} == 0 )); then
+    warn "No keys to purge"
+    return 0
+  fi
+
+  echo
+  local purged=0 missing=0
+  for k in "${keys[@]}"; do
+    local removed
+    removed=$(kv_del "$k")
+    if [[ "$removed" == "1" ]]; then
+      echo "  $(dim "DEL")  $k"
+      ((purged++)) || true
+    else
+      echo "  $(dim "—  ")  $k  $(dim "(missing)")"
+      ((missing++)) || true
+    fi
+  done
+  echo
+  ok "$purged purged, $missing missing"
+  if (( purged > 0 )); then
+    echo "  $(dim "next cache refresh will re-fetch upstream for these.")"
+  fi
+}
+
 # ── User management implementations (#89, prod-only) ──────────────────────
 # All `_impl_user_*` actions hit prod and authenticate via Bearer apiKey
 # (resolved from KV). They share the same "resolve email → apiKey → request"
@@ -740,9 +994,19 @@ _impl_user_list() {
 
 prod_cache_refresh()      { require_curl; require_prod_secret; _impl_cache_refresh "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod"; }
 prod_cache_revalidate()   { require_curl; require_prod_secret; _impl_cache_revalidate "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod" "${1:-}"; }
+prod_cache_purge()        { require_curl; require_jq; require_prod_kv_creds; _impl_cache_purge "$FD_PROD_BASE_URL" "$(date -u +%Y-%m-%d)" "prod" "$@"; }
+prod_status()             { require_curl; _impl_status "$FD_PROD_BASE_URL" "prod"; }
 
 local_cache_refresh()     { require_curl; require_local_cron_secret; _impl_cache_refresh "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local"; }
 local_cache_revalidate()  { require_curl; require_local_cron_secret; _impl_cache_revalidate "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local" "${1:-}"; }
+local_cache_purge()       { require_curl; require_jq; require_prod_kv_creds; _impl_cache_purge "$FD_LOCAL_BASE_URL" "$(date -u +%Y-%m-%d)" "local" "$@"; }
+local_status()            { require_curl; _impl_status "$FD_LOCAL_BASE_URL" "local"; }
+
+# Top-level inspection sections (#58). Both target prod artifacts (NASA key,
+# prod KV), so they're prod-implicit like `user`.
+apod()    { require_curl; require_jq; require_nasa_api_key; _impl_apod; }
+kv_keys_action() { require_curl; require_jq; require_prod_kv_creds; _impl_kv_keys "$@"; }
+kv_get_action()  { require_curl; require_jq; require_prod_kv_creds; _impl_kv_get  "$@"; }
 
 # Top-level `user` section (prod-only; #89). All require jq + KV creds for
 # the apiKey lookup. Signup is the lone exception (only needs curl).
@@ -962,18 +1226,20 @@ prod_cache_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
     err "prod cache: missing action"
-    echo "    available: refresh, revalidate, help" >&2
+    echo "    available: refresh, revalidate, purge, help" >&2
     exit 64
   fi
   shift
   case "$action" in
     refresh)      prod_cache_refresh "$@" ;;
     revalidate)   prod_cache_revalidate "$@" ;;
+    purge)        prod_cache_purge "$@" ;;
     help)         _subgroup_help "prod cache" \
                     "refresh"             "Warm data + revalidate pages (= /api/refresh)" \
-                    "revalidate [userId]" "Revalidate page ISR only" ;;
+                    "revalidate [userId]" "Revalidate page ISR only" \
+                    "purge <source>..."   "DEL today's cache keys for sources (or --all)" ;;
     *) err "unknown prod cache action: $action"
-       echo "    available: refresh, revalidate, help" >&2
+       echo "    available: refresh, revalidate, purge, help" >&2
        exit 64 ;;
   esac
 }
@@ -982,18 +1248,20 @@ local_cache_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
     err "local cache: missing action"
-    echo "    available: refresh, revalidate, help" >&2
+    echo "    available: refresh, revalidate, purge, help" >&2
     exit 64
   fi
   shift
   case "$action" in
     refresh)      local_cache_refresh "$@" ;;
     revalidate)   local_cache_revalidate "$@" ;;
+    purge)        local_cache_purge "$@" ;;
     help)         _subgroup_help "local cache" \
                     "refresh"             "Warm data + revalidate pages (against dev)" \
-                    "revalidate [userId]" "Revalidate page ISR only (against dev)" ;;
+                    "revalidate [userId]" "Revalidate page ISR only (against dev)" \
+                    "purge <source>..."   "DEL today's cache keys for sources (or --all)" ;;
     *) err "unknown local cache action: $action"
-       echo "    available: refresh, revalidate, help" >&2
+       echo "    available: refresh, revalidate, purge, help" >&2
        exit 64 ;;
   esac
 }
@@ -1032,18 +1300,19 @@ prod_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "prod: missing subgroup"
-    echo "    available: cache, help" >&2
+    echo "    available: cache, status, help" >&2
     echo "    (user management moved to top-level: ./fd.sh user help)" >&2
     exit 64
   fi
   shift
   case "$sub" in
-    cache) prod_cache_dispatch "$@" ;;
-    help)  echo ""; show_help_prod; echo "" ;;
-    user)  err "user is no longer under prod (#89) — use: ./fd.sh user $*"
-           exit 64 ;;
+    cache)  prod_cache_dispatch "$@" ;;
+    status) prod_status "$@" ;;
+    help)   echo ""; show_help_prod; echo "" ;;
+    user)   err "user is no longer under prod (#89) — use: ./fd.sh user $*"
+            exit 64 ;;
     *) err "unknown prod subgroup: $sub"
-       echo "    available: cache, help" >&2
+       echo "    available: cache, status, help" >&2
        exit 64 ;;
   esac
 }
@@ -1052,19 +1321,41 @@ local_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "local: missing subgroup"
-    echo "    available: server, cache, help" >&2
+    echo "    available: server, cache, status, help" >&2
     exit 64
   fi
   shift
   case "$sub" in
     server) local_server_dispatch "$@" ;;
     cache)  local_cache_dispatch "$@" ;;
+    status) local_status "$@" ;;
     help)   echo ""; show_help_local; echo "" ;;
     user)   err "user is no longer under local (#89) — local has no user management (uses seeded static key)."
             echo "    For prod user ops: ./fd.sh user help" >&2
             exit 64 ;;
     *) err "unknown local subgroup: $sub"
-       echo "    available: server, cache, help" >&2
+       echo "    available: server, cache, status, help" >&2
+       exit 64 ;;
+  esac
+}
+
+# Top-level `kv` dispatcher (#58). Prod-implicit — targets the prod Upstash KV.
+kv_dispatch() {
+  local action="${1:-}"
+  if [[ -z "$action" ]]; then
+    err "kv: missing action"
+    echo "    available: keys, get, help" >&2
+    exit 64
+  fi
+  shift
+  case "$action" in
+    keys) kv_keys_action "$@" ;;
+    get)  kv_get_action "$@" ;;
+    help) _subgroup_help "kv  (prod-only · read-only)" \
+            "keys [prefix]"  "List KV keys matching prefix* (default: all)" \
+            "get <key>"      "Print KV value (jq-pretty if JSON)" ;;
+    *) err "unknown kv action: $action"
+       echo "    available: keys, get, help" >&2
        exit 64 ;;
   esac
 }
@@ -1121,8 +1412,10 @@ case "$env" in
   prod)  prod_dispatch "$@" ;;
   local) local_dispatch "$@" ;;
   user)  user_dispatch "$@" ;;
+  kv)    kv_dispatch "$@" ;;
+  apod)  apod "$@" ;;
   *) err "unknown env: $env"
-     echo "    available: prod, local, user" >&2
+     echo "    available: prod, local, user, kv, apod" >&2
      echo "    run ./fd.sh --help for the full surface" >&2
      exit 64 ;;
 esac
