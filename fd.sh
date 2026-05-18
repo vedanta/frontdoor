@@ -111,6 +111,8 @@ _action()  { printf "    %s%-32s%s%s\n"  "$C_CYAN" "$1" "$C_RESET" "$2"; }
 show_help_prod() {
   _section "Production" "($FD_PROD_BASE_URL · cache refresh runs daily 03:00 UTC)"
   _action "status"                    "Health check — GET / + report code/time"
+  _action "watch [url]"               "Poll a deployment until Ready/Error (#103)"
+  _action "promote <url>"             "Promote a past deployment URL to live; --confirm <url> (#79)"
   _action "cache refresh"             "Warm data + revalidate pages (= /api/refresh)"
   _action "cache revalidate [userId]" "Revalidate page ISR only"
   _action "cache purge <source>..."   "DEL today's cache keys for sources (or --all)"
@@ -596,39 +598,247 @@ _impl_cache_revalidate() {
 
 # ── v0.3 inspection + cache-debugging implementations (#58) ───────────────
 
-# _impl_status <base_url> <env_label>
-# Discovery action — quick "is this env up?" check. Times a request to the
-# root path (which redirects to /fd/* logic via the proxy, or to GH Pages
-# marketing for prod). Reports HTTP code, total time, target URL.
-_impl_status() {
-  local base_url="$1" env_label="$2"
-  local url="${base_url%/}/"
-  log "Checking $env_label health"
-  echo "  $(dim "GET $url")"
-  echo
-
+# _probe <label> <method> <path-from-base> <expected-code> [body-grep-token]
+# Run one HTTP check against $1's $3 and assert the response code matches $4.
+# Prints a single aligned status line. Returns 0 on match, 1 otherwise.
+# Sets globals: PROBE_LAST_OK (0/1), PROBE_LAST_MS (int).
+PROBE_LAST_OK=0
+PROBE_LAST_MS=0
+_probe() {
+  local label="$1" method="$2" path="$3" expected="$4" base_url="$5"
+  local url="${base_url%/}${path}"
   local out
   out=$(curl -sS --max-time 10 -o /dev/null \
-    -w '%{http_code} %{time_total}\n' "$url" 2>&1) || {
-      err "Could not reach $url"
-      echo "    $(if [[ "$env_label" == "local" ]]; then echo "Dev server not running? ./fd.sh local server start"; else echo "Network or DNS issue? Try in a browser."; fi)" >&2
-      exit 1
+    -X "$method" \
+    -w '%{http_code} %{time_total} %{size_download}' "$url" 2>&1) || {
+      printf "  %-19s %s %s → %s%s%s  (curl failed)\n" \
+        "$label" "$method" "$path" "$C_RED" "ERR" "$C_RESET"
+      PROBE_LAST_OK=0
+      return 1
     }
-
-  local code time
+  local code time size ms
   code=$(echo "$out" | awk '{print $1}')
   time=$(echo "$out" | awk '{print $2}')
-  # Format time as ms with 0 decimals (curl reports seconds with microsecond precision).
-  local ms
+  size=$(echo "$out" | awk '{print $3}')
   ms=$(awk "BEGIN { printf \"%d\", $time * 1000 }")
+  PROBE_LAST_MS="$ms"
 
-  case "$code" in
-    2??)            ok  "$env_label up · HTTP $code · ${ms}ms" ;;
-    3??)            ok  "$env_label up · HTTP $code · ${ms}ms (redirect — expected for prod marketing rewrite)" ;;
-    4??|5??)        err "$env_label responded HTTP $code in ${ms}ms (unexpected)" ; exit 1 ;;
-    000)            err "No response from $url" ; exit 1 ;;
-    *)              err "Unexpected response $code" ; exit 1 ;;
-  esac
+  local marker note
+  if [[ "$code" == "$expected" ]]; then
+    marker="${C_GREEN}✓${C_RESET}"
+    PROBE_LAST_OK=1
+    note=""
+  else
+    marker="${C_RED}✗${C_RESET}"
+    PROBE_LAST_OK=0
+    note=" (expected $expected)"
+  fi
+
+  printf "  %b %-19s %s %-13s → %s  %s\n" \
+    "$marker" "$label" "$method" "$path" "$code" \
+    "$(dim "${ms}ms${size:+ · ${size}B}${note}")"
+}
+
+# _impl_status <base_url> <env_label>
+# Multi-probe health check (#79 fix). Three unauth'd checks confirm the
+# distinct layers of the stack are alive:
+#   1. /            → 200 — marketing rewrite (proxy fallback to GH Pages)
+#   2. /api/user    → 401 — route handler responds + auth gate works
+#   3. /fd/bogus    → 307 — proxy redirect logic works
+# Green only if all three match expected codes.
+_impl_status() {
+  local base_url="$1" env_label="$2"
+  log "Checking $env_label health"
+  echo "  $(dim "$base_url")"
+  echo
+
+  local start_ts
+  start_ts=$(date +%s%N)
+  local greens=0 total=3
+
+  _probe "marketing rewrite" GET "/"          200 "$base_url" && ((greens++)) || true
+  _probe "app route handler" GET "/api/user"  401 "$base_url" && ((greens++)) || true
+  _probe "proxy redirect"    GET "/fd/bogus"  307 "$base_url" && ((greens++)) || true
+
+  local end_ts ms
+  end_ts=$(date +%s%N)
+  ms=$(( (end_ts - start_ts) / 1000000 ))
+
+  echo
+  if (( greens == total )); then
+    ok "$env_label healthy · $greens/$total probes green · ${ms}ms total"
+  else
+    err "$env_label unhealthy · $greens/$total probes green · ${ms}ms total"
+    if [[ "$env_label" == "local" ]]; then
+      echo "    Dev server not running? ./fd.sh local server start" >&2
+    fi
+    exit 1
+  fi
+}
+
+# Resolve the most-recent production deployment URL via `vercel ls --prod`.
+# Echoes the URL; returns 1 if none found.
+_resolve_latest_prod_deployment() {
+  vercel ls frontdoor --prod 2>&1 \
+    | grep -oE 'https://frontdoor-[a-z0-9]+-[a-z0-9-]+\.vercel\.app' \
+    | head -1
+}
+
+# Read the state of one Vercel deployment via `vercel inspect`. Echoes the
+# normalized state token (READY / BUILDING / ERROR / CANCELED / QUEUED).
+# Vercel CLI emits a line like `    status<TAB>● Ready` — we want the last
+# whitespace-separated token, uppercased.
+_deployment_state() {
+  local url="$1"
+  vercel inspect "$url" 2>&1 \
+    | grep -iE '^[[:space:]]+status[[:space:]]' \
+    | head -1 \
+    | awk '{print $NF}' \
+    | tr '[:lower:]' '[:upper:]'
+}
+
+# _impl_prod_watch [deployment_url] [--timeout SEC]
+# Poll a production deployment until it reaches a terminal state. Replaces
+# the inline polling block previously embedded in the /fd-release skill (#103).
+_impl_prod_watch() {
+  local target_url=""
+  local timeout=300
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --timeout)
+        [[ -n "${2:-}" ]] || { err "--timeout requires a value (seconds)"; exit 64; }
+        timeout="$2"; shift 2 ;;
+      http*://*)
+        target_url="$1"; shift ;;
+      *)
+        err "unknown arg: $1"
+        echo "    usage: ./fd.sh prod watch [deployment-url] [--timeout SEC]" >&2
+        exit 64 ;;
+    esac
+  done
+
+  if [[ -z "$target_url" ]]; then
+    log "Looking up most-recent prod deployment"
+    target_url=$(_resolve_latest_prod_deployment)
+    if [[ -z "$target_url" ]]; then
+      err "No prod deployment found via \`vercel ls --prod\`"
+      exit 1
+    fi
+  fi
+
+  log "Watching $target_url"
+  echo "  $(dim "timeout: ${timeout}s · poll: 5s · prints on state change")"
+  echo
+
+  local start_ts
+  start_ts=$(date +%s)
+  local prev_state=""
+
+  while true; do
+    local age
+    age=$(( $(date +%s) - start_ts ))
+
+    if (( age >= timeout )); then
+      err "Timeout after ${timeout}s — last state: ${prev_state:-unknown}"
+      exit 2
+    fi
+
+    local state
+    state=$(_deployment_state "$target_url")
+    state="${state:-UNKNOWN}"
+
+    if [[ "$state" != "$prev_state" ]]; then
+      printf "  age %3ds · %s\n" "$age" "$state"
+      prev_state="$state"
+    fi
+
+    case "$state" in
+      READY)
+        echo
+        ok "Deployment Ready in ${age}s"
+        exit 0 ;;
+      ERROR|CANCELED|FAILED)
+        echo
+        err "Deployment finished: $state (after ${age}s)"
+        exit 1 ;;
+    esac
+
+    sleep 5
+  done
+}
+
+# _impl_prod_promote <deployment-url> --confirm <url>
+# Promote a past Vercel deployment to be the live production. Doesn't
+# rebuild — uses Vercel's stored past deployment. The current production
+# becomes the "previous" deployment (can be re-promoted to roll forward).
+# Mirrors the API the /fd-release skill's rollback action wraps (#79).
+#
+# Takes a deployment URL directly (not a tag) because Vercel's CLI doesn't
+# expose `meta.githubCommitSha` via `inspect` — so tag → URL must be done
+# manually (skill orchestrates: `vercel ls --prod` + user confirms which
+# URL matches the target tag).
+_impl_prod_promote() {
+  local url="${1:-}"
+  if [[ -z "$url" ]]; then
+    err "missing deployment URL"
+    cat >&2 <<EOF
+    usage: ./fd.sh prod promote <deployment-url> --confirm <deployment-url>
+
+    Find the URL via:
+      vercel ls frontdoor --prod | head -10
+
+    The full URL ends in .vercel.app — copy the whole thing.
+EOF
+    exit 64
+  fi
+  shift
+
+  local confirm=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --confirm)
+        [[ -n "${2:-}" ]] || { err "--confirm requires the URL to confirm"; exit 64; }
+        confirm="$2"; shift 2 ;;
+      *) err "unknown flag: $1"
+         echo "    usage: ./fd.sh prod promote <url> --confirm <url>" >&2
+         exit 64 ;;
+    esac
+  done
+
+  if [[ -z "$confirm" ]]; then
+    err "destructive — must pass --confirm <url> matching the target"
+    echo "    usage: ./fd.sh prod promote $url --confirm $url" >&2
+    exit 64
+  fi
+  if [[ "$confirm" != "$url" ]]; then
+    err "--confirm value doesn't match target URL"
+    echo "    got:    $confirm" >&2
+    echo "    target: $url" >&2
+    exit 64
+  fi
+
+  # Basic sanity: URL should look like a Vercel deployment URL.
+  if ! [[ "$url" =~ ^https://frontdoor-[a-z0-9]+-[a-z0-9-]+\.vercel\.app$ ]]; then
+    warn "URL doesn't look like a frontdoor Vercel deployment URL"
+    echo "    expected shape: https://frontdoor-XXXXXXXXX-vedantas-projects-NNNNNNNN.vercel.app" >&2
+    echo "    proceeding anyway — vercel CLI will error if invalid" >&2
+    echo
+  fi
+
+  log "Promoting deployment to production"
+  echo "  $(dim "vercel promote $url")"
+  echo
+
+  if ! vercel promote "$url" 2>&1 | tail -8; then
+    err "vercel promote failed"
+    exit 1
+  fi
+
+  echo
+  ok "Promoted — that deployment is now live production"
+  echo "  $(dim "Verify: ./fd.sh prod watch  (should reach READY against the newly-aliased deployment)")"
+  echo "  $(dim "Note:   main HEAD unchanged. Next /fd-release will return to the latest tag.")"
 }
 
 # _impl_apod — direct NASA APOD ping to verify the key + see today's image.
@@ -1074,6 +1284,8 @@ prod_cache_refresh()      { require_curl; require_prod_secret; _impl_cache_refre
 prod_cache_revalidate()   { require_curl; require_prod_secret; _impl_cache_revalidate "$FD_PROD_BASE_URL" "$PROD_CRON_SECRET" "PROD_CRON_SECRET" "prod" "${1:-}"; }
 prod_cache_purge()        { require_curl; require_jq; require_prod_kv_creds; _impl_cache_purge "$FD_PROD_BASE_URL" "$(date -u +%Y-%m-%d)" "prod" "$@"; }
 prod_status()             { require_curl; _impl_status "$FD_PROD_BASE_URL" "prod"; }
+prod_watch()              { _impl_prod_watch "$@"; }    # #103 — vercel CLI does its own checks
+prod_promote()            { _impl_prod_promote "$@"; }  # #79 — vercel CLI does its own checks
 
 local_cache_refresh()     { require_curl; require_local_cron_secret; _impl_cache_refresh "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local"; }
 local_cache_revalidate()  { require_curl; require_local_cron_secret; _impl_cache_revalidate "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local" "${1:-}"; }
@@ -1452,19 +1664,21 @@ prod_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "prod: missing subgroup"
-    echo "    available: cache, status, help" >&2
+    echo "    available: cache, status, watch, promote, help" >&2
     echo "    (user management moved to top-level: ./fd.sh user help)" >&2
     exit 64
   fi
   shift
   case "$sub" in
-    cache)  prod_cache_dispatch "$@" ;;
-    status) prod_status "$@" ;;
-    help)   echo ""; show_help_prod; echo "" ;;
-    user)   err "user is no longer under prod (#89) — use: ./fd.sh user $*"
-            exit 64 ;;
+    cache)   prod_cache_dispatch "$@" ;;
+    status)  prod_status "$@" ;;
+    watch)   prod_watch "$@" ;;
+    promote) prod_promote "$@" ;;
+    help)    echo ""; show_help_prod; echo "" ;;
+    user)    err "user is no longer under prod (#89) — use: ./fd.sh user $*"
+             exit 64 ;;
     *) err "unknown prod subgroup: $sub"
-       echo "    available: cache, status, help" >&2
+       echo "    available: cache, status, watch, promote, help" >&2
        exit 64 ;;
   esac
 }

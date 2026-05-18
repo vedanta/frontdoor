@@ -1,6 +1,6 @@
 ---
 name: fd-release
-description: Walk the release cycle for `vedanta/frontdoor` end-to-end — survey → confirm version → draft notes → bump + tag + push → deploy to prod → smoke → GitHub Release page. Sequential, in-chat, gated by 2 HITL confirms. Invoke as `/fd-release`, `/fd-release status`, `/fd-release vX.Y.Z`, `/fd-release patch|minor|major`, or `/fd-release smoke vX.Y.Z`.
+description: Walk the release cycle for `vedanta/frontdoor` end-to-end — survey → confirm version → draft notes → bump + tag + push → deploy to prod → smoke → GitHub Release page. Or roll back to a past tag. Sequential, in-chat, gated by HITL confirms. Invoke as `/fd-release`, `/fd-release status`, `/fd-release vX.Y.Z`, `/fd-release patch|minor|major`, `/fd-release smoke vX.Y.Z`, or `/fd-release rollback vX.Y.Z`.
 ---
 
 # /fd-release — the frontdoor release orchestrator
@@ -23,6 +23,7 @@ decisions in the pipeline.
 - **`/fd-release vX.Y.Z`** — explicit version (overrides the bump suggestion)
 - **`/fd-release patch|minor|major`** — explicit semver bump (skips the bump-choice gate)
 - **`/fd-release smoke vX.Y.Z`** — re-run smoke against a past tag; no tagging, no deploy
+- **`/fd-release rollback vX.Y.Z`** — point production at a past tag's deployment (#79); no rebuild, no code revert
 
 ## The cycle (forward path)
 
@@ -122,21 +123,23 @@ The deploy then runs through `ops/vercel-ignore-build.sh`:
 - `git describe --tags --exact-match HEAD` succeeds (because we just tagged HEAD) → exits 1 → BUILD
 - Non-tagged commits → exits 0 → SKIP (you'll see them as "Canceled" in `vercel ls`)
 
-Poll for Ready:
+Poll for Ready via the dedicated fd.sh action (#103):
 
 ```bash
-# Up to ~5 minutes; expected ~30-45s for our build
-for i in {1..30}; do
-  state=$(vercel ls frontdoor --prod 2>&1 | grep -m1 "● Ready\|Canceled\|Error\|Building")
-  echo "[$i/30] $state"
-  echo "$state" | grep -q "● Ready" && break
-  sleep 10
-done
+./fd.sh prod watch                    # auto-detects most-recent deployment
+# or, with explicit URL:
+./fd.sh prod watch https://frontdoor-xyz.vercel.app
+# default timeout 300s; override with --timeout 600
 ```
 
-Surface canceled deploys (= tag-gate working correctly for the latest few
-main pushes). Halt if the new deploy isn't Ready after ~5 min — likely a
-build error or stuck queue.
+Exit codes:
+- `0` → Ready (continue to smoke)
+- `1` → Error / Canceled / Failed (halt; deploy didn't succeed)
+- `2` → Timeout (halt; build is stuck or much slower than expected)
+
+Canceled deploys for non-tagged main commits (= tag-gate working correctly)
+are visible in `vercel ls --prod` history but aren't what `prod watch` is
+tracking — it follows the deployment Vercel CLI just created.
 
 ### 5. Smoke
 
@@ -203,6 +206,96 @@ Same as step 5 but without any of the prior mutations. Useful when you
 suspect prod broke since the last release and want to confirm. If smoke
 fails, the skill prints the failing assertion + suggests `git log vX.Y.Z..main`
 to see what changed.
+
+## `/fd-release rollback vX.Y.Z` (#79 — point prod at a past tag)
+
+Vercel keeps every deployment forever; rollback points the production
+alias at a past one. **Instant, no rebuild, no code revert** — if v0.0.5
+broke production, `/fd-release rollback v0.0.4` is back live in seconds.
+
+### When to use
+
+- A user-visible regression appeared after the most recent release
+- An ops issue (Vercel outage, secret-rotation glitch) that the past
+  build wasn't subject to
+- Buying time to diagnose without leaving prod broken
+
+### When NOT to use
+
+- A revert that should be permanent — make it a proper fix-forward (revert
+  PR, ship as a new release). Rollback is for emergencies.
+- A bug that was already present in the rollback target — rollback won't help.
+
+### The cycle
+
+1. **Validate the target tag**: `git rev-parse <tag>^{commit}` succeeds.
+   Get its commit SHA + timestamp for the URL-matching step:
+   ```bash
+   git rev-parse <tag>^{commit}            # SHA
+   git log -1 --format=%cI <tag>           # ISO timestamp
+   ```
+
+2. **Map tag → Vercel deployment URL.** Vercel's `inspect` CLI doesn't
+   expose `meta.githubCommitSha`, so this step is **human-orchestrated**:
+   ```bash
+   vercel ls frontdoor --prod | head -20
+   ```
+   Show the user the recent deployments. The Vercel `Age` column + the
+   tag's commit timestamp should make the right deployment obvious
+   (deployment created shortly after the tag push). Use
+   `AskUserQuestion` to confirm which URL is the rollback target.
+
+3. **Confirm rollback**: print the current production tag + the target tag
+   + the chosen URL. HITL gate via `AskUserQuestion` —
+   "Promote `<url>` (= vX.Y.Z) to live, replacing current production?"
+
+4. **Promote**: call `./fd.sh prod promote <url> --confirm <url>`. The
+   `--confirm <url>` flag mirrors the `user delete --confirm <email>`
+   pattern (same friction, same protection). fd.sh just wraps `vercel
+   promote <url>` — the heavy lifting is Vercel's.
+
+5. **Verify the rollback took effect**: `./fd.sh prod watch <url>` to
+   confirm READY status holds on the newly-aliased deployment.
+
+6. **Smoke** (same as step 5 of the forward cycle: marketing 200,
+   `/api/keys` 400 on bad input).
+
+7. **Report**: print which tag is now live + the explicit reminder that
+   `main` HEAD is unchanged.
+
+### Future enhancement
+
+If `vercel inspect` ever exposes `meta.githubCommitSha` (or we add a Vercel
+REST API call gated on `$VERCEL_TOKEN`), step 2 can become automated and
+the skill drops the URL-confirm gate. Until then, the human step is the
+right safety mechanism for an emergency action anyway.
+
+### What rollback does NOT do
+
+- **Does not change `main`** — git history is unchanged. The next
+  `/fd-release` will return production to whatever the latest tag is.
+- **Does not create a tag or release** — it's an ops action, not a
+  release event.
+- **Does not delete the previously-live deployment** — Vercel retains
+  it; can be re-promoted to "roll forward" if the rollback was a mistake.
+
+### Output template
+
+```
+[fd] Rolling back to v0.0.4
+  current live: v0.0.5
+  target:       v0.0.4 (commit a1b2c3d, deployed Mon May 18 09:00)
+  url:          https://frontdoor-xyz.vercel.app  (user-confirmed)
+
+[HITL] Promote https://frontdoor-xyz.vercel.app (= v0.0.4) to live? [y/N]
+
+  ✓ Promoted — that deployment is now live production
+  ✓ READY in 0s
+  ✓ Smoke passed (HTTP 200 in 32ms)
+
+Note: main HEAD is still at v0.0.5; next /fd-release will return there.
+To roll forward later: ./fd.sh prod promote <url-for-v0.0.5> --confirm <url>
+```
 
 ## Conventions
 
@@ -305,13 +398,13 @@ spot.
 - **Squash-merge breaks `git branch --merged` detection.** Branch tips have different SHAs after squash. Use `gh pr list --head <branch> --state all` to confirm merge state instead.
 - **package.json version drift.** The statusbar reads `package.json#version` and links to the matching GitHub Release. If you tag `vX.Y.Z` without bumping package.json to match, the link will 404 until the release page is created. Hence step 3 always bumps before tagging.
 
-## What this skill DOES NOT do (v0.1)
+## What this skill DOES NOT do
 
-- **Rollback** (promote a past Vercel deployment to current) — own follow-up; tracked in #79
 - **Auto-detect bump from conventional-commit prefixes** — manual is fine for solo dev
 - **Multi-deployment-target chains** (preview → staging → prod promotion) — single-env app
 - **Slack / external notifications** on release — out of scope
 - **Auto-edit release notes** — drafts them, user accepts/edits/aborts; never publishes without consent
+- **Tag-pointer rewind** as a form of rollback — `/fd-release rollback` uses Vercel promote (forward-only history); never force-tags a past commit
 
 ## HITL gates summary
 
