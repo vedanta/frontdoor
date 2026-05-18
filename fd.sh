@@ -125,6 +125,7 @@ show_help_local() {
   _action "server kill"               "Force-kill (SIGKILL + clear port)"
   _action "server status"             "PID, uptime, URL, log path"
   _action "server logs"               "tail -f the dev log"
+  _action "user signup <email>"       "Create user via Resend-bypass (#70; no email)"
   _action "cache refresh"             "Warm data + revalidate pages (against dev)"
   _action "cache revalidate [userId]" "Revalidate page ISR only (against dev)"
   _action "cache purge <source>..."   "DEL today's cache keys (against prod KV)"
@@ -249,6 +250,23 @@ require_jq() {
   if ! have jq; then
     err "jq is required for KV-backed actions (JSON parsing)."
     echo "    Install with: brew install jq" >&2
+    exit 1
+  fi
+}
+
+# Required by `./fd.sh local user signup` (#70 Resend-bypass).
+require_local_bootstrap_key() {
+  if [[ -z "${LOCAL_BOOTSTRAP_KEY:-}" ]]; then
+    err "LOCAL_BOOTSTRAP_KEY is not set in .env.local."
+    cat >&2 <<EOF
+
+Local signup bypass needs this to authenticate against your dev server's
+/api/keys, which uses it as a shared secret to skip Resend. Pick any value:
+
+  echo "LOCAL_BOOTSTRAP_KEY=\$(openssl rand -hex 16)" >> .env.local
+
+Then restart \`pnpm dev\` so the dev server reads the new value.
+EOF
     exit 1
   fi
 }
@@ -1077,6 +1095,79 @@ user_delete() { require_curl; require_jq; require_prod_kv_creds; _impl_user_dele
 user_list()   { require_curl; require_jq; require_prod_kv_creds; _impl_user_list   "$@"; }
 user_reveal() { require_jq; require_prod_kv_creds; _impl_user_reveal "$@"; }
 
+# Local user signup (#70 Resend-bypass). Restores the action #89 removed,
+# but with new mechanics: POSTs to local /api/keys with the bootstrap field
+# so the dev server skips Resend and returns apiKey + URL in the response.
+local_user_signup() {
+  local email="${1:-}"
+  if [[ -z "$email" ]]; then
+    err "missing email"
+    echo "    usage: ./fd.sh local user signup <email>" >&2
+    exit 64
+  fi
+  if ! looks_like_email "$email"; then
+    err "'$email' doesn't look like a valid email"
+    exit 64
+  fi
+
+  require_curl
+  require_jq
+  require_local_bootstrap_key
+
+  local url="${FD_LOCAL_BASE_URL%/}/api/keys"
+  local body
+  body=$(jq -nc \
+    --arg email "$email" \
+    --arg bootstrap "$LOCAL_BOOTSTRAP_KEY" \
+    '{email: $email, bootstrap: $bootstrap}')
+
+  log "POST $url (bypass mode)"
+  echo "  $(dim "no Resend email will be sent")"
+  echo
+
+  local tmp
+  tmp=$(mktemp)
+  # shellcheck disable=SC2064
+  trap "rm -f '$tmp'" EXIT
+
+  local code
+  code=$(curl -sS --max-time 10 -o "$tmp" -w "%{http_code}" \
+    -X POST "$url" \
+    -H 'content-type: application/json' \
+    --data "$body") || {
+      err "curl failed (is the dev server running? ./fd.sh local server start)"
+      exit 1
+    }
+
+  echo "$(dim "← HTTP $code")"
+
+  case "$code" in
+    201)
+      local out_email out_key out_url
+      out_email=$(jq -r '.email'  < "$tmp")
+      out_key=$(jq   -r '.apiKey' < "$tmp")
+      out_url=$(jq   -r '.url'    < "$tmp")
+      ok "Created $out_email locally (no email sent)"
+      echo
+      echo "  $(dim "apiKey:") $out_key"
+      echo "  $(dim "open:")   $out_url"
+      echo
+      ;;
+    400)
+      err "Server rejected the bootstrap field — is NODE_ENV=production locally somehow?"
+      pretty_json < "$tmp"
+      exit 1 ;;
+    401)
+      err "Bypass auth rejected — LOCAL_BOOTSTRAP_KEY mismatch between this shell and the dev server."
+      echo "    Verify .env.local, then restart \`pnpm dev\`." >&2
+      exit 1 ;;
+    *)
+      err "Unexpected response $code"
+      pretty_json < "$tmp"
+      exit 1 ;;
+  esac
+}
+
 # ── Local server lifecycle actions (local-only; prod is Vercel) ────────────
 
 # local server start
@@ -1378,24 +1469,40 @@ prod_dispatch() {
   esac
 }
 
+local_user_dispatch() {
+  local action="${1:-}"
+  if [[ -z "$action" ]]; then
+    err "local user: missing action"
+    echo "    available: signup, help" >&2
+    exit 64
+  fi
+  shift
+  case "$action" in
+    signup) local_user_signup "$@" ;;
+    help)   _subgroup_help "local user" \
+              "signup <email>"  "Create user via Resend-bypass (#70; no email)" ;;
+    *) err "unknown local user action: $action"
+       echo "    available: signup, help" >&2
+       exit 64 ;;
+  esac
+}
+
 local_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "local: missing subgroup"
-    echo "    available: server, cache, status, help" >&2
+    echo "    available: server, cache, user, status, help" >&2
     exit 64
   fi
   shift
   case "$sub" in
     server) local_server_dispatch "$@" ;;
     cache)  local_cache_dispatch "$@" ;;
+    user)   local_user_dispatch "$@" ;;
     status) local_status "$@" ;;
     help)   echo ""; show_help_local; echo "" ;;
-    user)   err "user is no longer under local (#89) — local has no user management (uses seeded static key)."
-            echo "    For prod user ops: ./fd.sh user help" >&2
-            exit 64 ;;
     *) err "unknown local subgroup: $sub"
-       echo "    available: server, cache, status, help" >&2
+       echo "    available: server, cache, user, status, help" >&2
        exit 64 ;;
   esac
 }

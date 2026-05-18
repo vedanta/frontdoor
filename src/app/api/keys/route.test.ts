@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // In-memory KV fake covering get / set / sadd (the slice this route uses).
 const kvStore = new Map<string, unknown>();
@@ -163,5 +163,103 @@ describe('POST /api/keys', () => {
   it('rejects missing email field with 400', async () => {
     const res = await POST(postReq({}));
     expect(res.status).toBe(400);
+  });
+});
+
+// ── Local-dev Resend bypass (#70) ──────────────────────────────────────
+
+describe('POST /api/keys — local-dev bypass (#70)', () => {
+  const BYPASS = 'test-local-bootstrap-secret';
+
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('dev + matching bypass: 201 with apiKey + url, NO Resend send', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('LOCAL_BOOTSTRAP_KEY', BYPASS);
+
+    const res = await POST(postReq({ email: 'bypass@test.com', bootstrap: BYPASS }));
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      status: 'created locally (no email sent)',
+      email: 'bypass@test.com',
+    });
+    expect(body.apiKey).toMatch(/^fd_[0-9a-f]{32}$/);
+    expect(body.url).toMatch(/\?bootstrap=fdb_[0-9a-f]{32}$/);
+
+    // No email sent
+    expect(sentEmails).toHaveLength(0);
+
+    // KV state still written correctly
+    const userId = (await fakeRedis.get(apiKeyKey(body.apiKey as string))) as string;
+    expect(userId).toBeDefined();
+    expect(await fakeRedis.get(emailKey('bypass@test.com'))).toBe(userId);
+  });
+
+  it('dev + bypass on KNOWN email: 201 with EXISTING apiKey + fresh bootstrap, NO Resend', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('LOCAL_BOOTSTRAP_KEY', BYPASS);
+
+    // First call mints the user
+    const first = (await (
+      await POST(postReq({ email: 'known@test.com', bootstrap: BYPASS }))
+    ).json()) as Record<string, unknown>;
+    const firstKey = first.apiKey;
+    const firstUrl = first.url;
+
+    // Second call (same email) reuses apiKey but mints fresh bootstrap URL
+    const second = (await (
+      await POST(postReq({ email: 'known@test.com', bootstrap: BYPASS }))
+    ).json()) as Record<string, unknown>;
+
+    expect(second.status).toBe('reissued locally (no email sent)');
+    expect(second.apiKey).toBe(firstKey); // SAME long-lived key
+    expect(second.url).not.toBe(firstUrl); // DIFFERENT bootstrap token
+    expect(sentEmails).toHaveLength(0);
+  });
+
+  it('production: bootstrap field rejected outright (400), regardless of env var', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LOCAL_BOOTSTRAP_KEY', BYPASS); // even if set in prod env
+
+    const res = await POST(postReq({ email: 'attacker@evil.com', bootstrap: BYPASS }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/not accepted in production/);
+    expect(sentEmails).toHaveLength(0);
+  });
+
+  it('dev but LOCAL_BOOTSTRAP_KEY not set: bypass attempt → 401', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    // LOCAL_BOOTSTRAP_KEY intentionally NOT stubbed
+
+    const res = await POST(postReq({ email: 'x@x.com', bootstrap: 'anything' }));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error).toMatch(/mismatch or LOCAL_BOOTSTRAP_KEY not configured/);
+    expect(sentEmails).toHaveLength(0);
+  });
+
+  it('dev but bootstrap value mismatch: 401', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('LOCAL_BOOTSTRAP_KEY', BYPASS);
+
+    const res = await POST(postReq({ email: 'x@x.com', bootstrap: 'wrong-value' }));
+    expect(res.status).toBe(401);
+    expect(sentEmails).toHaveLength(0);
+  });
+
+  it('dev with NO bootstrap field: falls through to normal Resend flow (202)', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('LOCAL_BOOTSTRAP_KEY', BYPASS);
+
+    const res = await POST(postReq({ email: 'normal@test.com' })); // no bootstrap field
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ status: 'check your email' });
+    expect(sentEmails).toHaveLength(1); // normal flow → email sent
   });
 });
