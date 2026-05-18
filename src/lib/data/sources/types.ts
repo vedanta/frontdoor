@@ -27,6 +27,12 @@ export type TextItem = {
   link?: string;
   /** Tiny mono label at the bottom. */
   sourceLabel: string;
+  /**
+   * True when served from a built-in offline fallback (upstream failed; the
+   * source has a deterministic local entry). Currently set only by `word`
+   * (#87). Renderer shows a small `(offline)` marker after the source label.
+   */
+  offline?: boolean;
 };
 
 /** Weather payload. */

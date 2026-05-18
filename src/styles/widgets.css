@@ -200,6 +200,14 @@
   opacity: 0.5;
 }
 
+/* Offline marker — sits inline after .text-source label when word widget
+   served its definition from the offline fallback (#87). Same dim hue as
+   the source label, slightly dimmer to mark it as exception-state. */
+.text-offline-marker {
+  opacity: 0.75;
+  font-style: italic;
+}
+
 /* ── Widget: headlines ── */
 .headlines-list {
   list-style: none;

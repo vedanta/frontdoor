@@ -111,4 +111,37 @@ describe('TextWidget', () => {
     );
     expect(container.querySelector('.stale-caption')).not.toBeInTheDocument();
   });
+
+  it('renders the "(offline)" marker when data.offline is true (#87)', () => {
+    const { container } = render(
+      <TextWidget
+        widget={{
+          type: 'text',
+          title: 'Word',
+          color: 'cyan',
+          icon: '▤',
+          span: 1,
+          source: 'word',
+        }}
+        data={{
+          body: 'undying; eternally beautiful',
+          attribution: 'amaranthine (adjective)',
+          sourceLabel: 'offline word list',
+          offline: true,
+        }}
+      />,
+    );
+    expect(screen.getByText('offline word list')).toBeInTheDocument();
+    expect(container.querySelector('.text-offline-marker')?.textContent).toBe(' (offline)');
+  });
+
+  it('does NOT render the "(offline)" marker when data.offline is undefined/false', () => {
+    const { container } = render(
+      <TextWidget
+        widget={quoteWidget}
+        data={{ body: 'Be kind.', attribution: 'Anon', sourceLabel: 'via zenquotes.io' }}
+      />,
+    );
+    expect(container.querySelector('.text-offline-marker')).not.toBeInTheDocument();
+  });
 });
