@@ -77,7 +77,7 @@ describe('POST /api/keys', () => {
     // Email captured
     expect(sentEmails).toHaveLength(1);
     expect(sentEmails[0].to).toBe('new@example.com'); // lowercased
-    expect(sentEmails[0].key).toMatch(/^[0-9a-f]{32}$/);
+    expect(sentEmails[0].key).toMatch(/^fd_[0-9a-f]{32}$/); // #72 — `fd_` prefix
     expect(sentEmails[0].url).toContain('http://localhost:3000/?key=');
 
     // KV written across all key spaces

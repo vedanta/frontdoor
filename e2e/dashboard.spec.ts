@@ -13,7 +13,7 @@ import { expect, test } from '@playwright/test';
  *
  * Skips when KV isn't configured.
  */
-const SEED_KEY = 'deadbeefdeadbeefdeadbeefdeadbeef';
+const SEED_KEY = 'fd_deadbeefdeadbeefdeadbeefdeadbeef';
 const SEED_SLUG = 'deadbeef';
 
 const hasKV = !!process.env.KV_REST_API_URL;

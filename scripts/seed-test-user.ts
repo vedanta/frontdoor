@@ -6,11 +6,11 @@
  *
  * Default args:
  *   --email     dev@frontdoor.app
- *   --key       deadbeefdeadbeefdeadbeefdeadbeef   (32 hex chars; remember/share)
- *   --slug      deadbeef                           (8 hex chars)
+ *   --key       fd_deadbeefdeadbeefdeadbeefdeadbeef   (#72 — fd_ + 32 hex)
+ *   --slug      deadbeef                              (8 hex chars)
  *   --userId    u_dev_local
- *   --name      dev user                           (#69 — display name)
- *   --timezone  America/New_York                   (#69 — IANA tz)
+ *   --name      dev user                              (#69 — display name)
+ *   --timezone  America/New_York                      (#69 — IANA tz)
  *
  * Idempotent. Re-running with the same args overwrites cleanly. The script
  * also exports `seedUser(...)` so Playwright fixtures (e2e/global-setup.ts)
@@ -61,9 +61,9 @@ import { DEFAULT_CONFIG } from '../src/lib/config';
 
 const DEFAULTS = {
   email: 'dev@frontdoor.app',
-  // 32 hex chars — matches signup-minted format (mintIds). `deadbeef` x4 is
-  // a recognizable "definitely a test value" pattern.
-  apiKey: 'deadbeefdeadbeefdeadbeefdeadbeef',
+  // `fd_` + 32 hex chars — matches signup-minted format (mintIds, #72).
+  // `deadbeef` x4 is a recognizable "definitely a test value" pattern.
+  apiKey: 'fd_deadbeefdeadbeefdeadbeefdeadbeef',
   // 8 hex chars — same shape as signup-minted slugs
   slug: 'deadbeef',
   userId: 'u_dev_local',

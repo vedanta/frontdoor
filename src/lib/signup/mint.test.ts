@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildKeyUrl, mintIds } from './mint';
+import { API_KEY_PREFIX, buildKeyUrl, mintIds } from './mint';
 
 describe('mintIds', () => {
-  it('apiKey is 32 hex chars (UUID v4 stripped)', () => {
+  it('apiKey is `fd_` + 32 hex chars, total 35 chars (#72)', () => {
     const { apiKey } = mintIds();
-    expect(apiKey).toMatch(/^[0-9a-f]{32}$/);
+    expect(apiKey).toMatch(/^fd_[0-9a-f]{32}$/);
+    expect(apiKey.startsWith(API_KEY_PREFIX)).toBe(true);
+    expect(apiKey).toHaveLength(35); // 3 (prefix) + 32 (hex)
   });
 
   it('userId is a UUID', () => {

@@ -68,4 +68,35 @@ describe('getSessionFromBearer', () => {
     mockAuthHeader = 'bearer k';
     expect(await getSessionFromBearer()).toEqual({ userId: 'u', slug: 's' });
   });
+
+  // #72 backwards-compat regression guard: when the `fd_` prefix was added
+  // to newly-minted keys, the explicit contract was "auth gate does NOT
+  // validate the prefix — pre-existing keys keep working forever." This
+  // test pins that contract. If anyone adds a `startsWith('fd_')` check at
+  // the auth gate in the future, this test will fail and force the discussion.
+  it('accepts a legacy un-prefixed apiKey (#72 backwards-compat)', async () => {
+    const legacyKey = 'deadbeefdeadbeefdeadbeefdeadbeef'; // 32 hex, no `fd_`
+    kvStore.set(apiKeyKey(legacyKey), 'u_legacy');
+    kvStore.set(userKey('u_legacy'), {
+      email: 'legacy@example.com',
+      apiKey: legacyKey,
+      slug: 'legacy01',
+      createdAt: '2025-01-01T00:00:00Z',
+    });
+    mockAuthHeader = `Bearer ${legacyKey}`;
+    expect(await getSessionFromBearer()).toEqual({ userId: 'u_legacy', slug: 'legacy01' });
+  });
+
+  it('accepts a `fd_`-prefixed apiKey (#72 forward path)', async () => {
+    const prefixedKey = 'fd_deadbeefdeadbeefdeadbeefdeadbeef';
+    kvStore.set(apiKeyKey(prefixedKey), 'u_new');
+    kvStore.set(userKey('u_new'), {
+      email: 'new@example.com',
+      apiKey: prefixedKey,
+      slug: 'newslug1',
+      createdAt: '2026-05-18T00:00:00Z',
+    });
+    mockAuthHeader = `Bearer ${prefixedKey}`;
+    expect(await getSessionFromBearer()).toEqual({ userId: 'u_new', slug: 'newslug1' });
+  });
 });
