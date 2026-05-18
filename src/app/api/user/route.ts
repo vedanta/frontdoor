@@ -147,7 +147,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     redis.srem(USERS_SET, session.userId),
   ]);
 
-  // Clear the auth cookie. Attributes must match how middleware sets it
+  // Clear the auth cookie. Attributes must match how the proxy sets it
   // (path + sameSite + secure + httpOnly) so the browser actually overwrites
   // the existing cookie rather than creating a sibling.
   const res = new NextResponse(null, { status: 204 });

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * Auth flow E2E — the full middleware contract under PR #45.
+ * Auth flow E2E — the full proxy contract under PR #45 (was "middleware" pre-#62).
  *
  * Uses the seed-test-user fixture (global-setup):
  *   - apiKey       `fd_deadbeefdeadbeefdeadbeefdeadbeef`  (#72 prefix; LEGACY ?key= path)

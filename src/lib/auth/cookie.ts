@@ -1,13 +1,13 @@
 /**
  * Signed cookie payload — HMAC-SHA256 via Web Crypto so it works in both
- * the Node and Edge runtimes (middleware runs on Edge).
+ * the Node and Edge runtimes (the proxy runs on Edge).
  *
  * Format: `<base64url(json)>.<base64url(hmac)>`
  *   - payload is JSON-encoded
  *   - signature is over the payload bytes only (so swapping payload invalidates)
  *
  * Per docs/architecture.md §3.2 + §4: the cookie carries `userId`+`slug` so
- * middleware can authenticate every request without a KV round-trip.
+ * the proxy can authenticate every request without a KV round-trip.
  */
 
 function b64uEncode(bytes: Uint8Array): string {

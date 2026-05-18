@@ -83,7 +83,7 @@ graph TB
 
     subgraph Vercel
         ISR["ISR page /fd/[slug]<br/>per-user, statically cached"]
-        AUTH[Auth middleware<br/>cookie / Bearer → userId]
+        AUTH[Auth proxy<br/>cookie / Bearer → userId]
         KEYS[/api/keys<br/>self-service signup/]
         CONFIG[/api/config<br/>GET/PUT — PUT triggers revalidate/]
         WAPI[/api/widget/*<br/>per-widget data endpoints/]
@@ -191,7 +191,7 @@ cache — no data fetching, no render work on the hot path.
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant MW as Auth middleware
+    participant MW as Auth proxy
     participant ISR as ISR page cache (/fd/[slug])
     participant KV as Vercel KV
 
@@ -253,7 +253,7 @@ arrives.
 ```mermaid
 sequenceDiagram
     participant C as RN app
-    participant A as Auth middleware
+    participant A as Auth proxy
     participant API as /api/config + /api/widget/*
     participant KV as Vercel KV
 
@@ -325,13 +325,13 @@ but the **transport differs by client** — because the web is server-rendered, 
 the safer cookie mechanism, while RN needs a portable token:
 
 - **Web — signed `httpOnly` cookie.** The key bootstraps from `?key=` on first visit;
-  the auth middleware validates it against KV once, then sets a **signed** `httpOnly`
+  the auth proxy validates it against KV once, then sets a **signed** `httpOnly`
   cookie carrying `userId`+`slug` and redirects to the user's route `/fd/{slug}`. The
   cookie is the session — verified by signature on every load (no KV round-trip); the
-  query param is bootstrap-only (it leaks via logs, history, `Referer`). Middleware also
+  query param is bootstrap-only (it leaks via logs, history, `Referer`). The proxy also
   checks the cookie's `slug` matches the path, so one user can't load another's route.
 - **React Native — `Authorization: Bearer {apiKey}`.** The app stores the key in the OS
-  keychain / secure store and sends it on every API request. The auth middleware
+  keychain / secure store and sends it on every API request. The auth proxy
   resolves `key:{apiKey}` → `userId`.
 - **`RESEND_API_KEY`** — authenticates outbound mail to Resend.
 - **`CRON_SECRET`** — bearer token Vercel attaches to cron requests; `/api/refresh` and

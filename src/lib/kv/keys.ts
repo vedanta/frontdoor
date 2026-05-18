@@ -52,7 +52,7 @@ export const USERS_SET = 'users';
 /**
  * One-time bootstrap token (#73) → identity wrapper. Set with Redis `EX` so
  * the key auto-prunes; the embedded `exp` is a defensive second check at
- * read time. Single-use: middleware `DEL`s the key after a successful
+ * read time. Single-use: the proxy `DEL`s the key after a successful
  * exchange so a second visit returns 410.
  */
 export type BootstrapRecord = {

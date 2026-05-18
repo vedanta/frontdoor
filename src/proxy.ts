@@ -1,6 +1,11 @@
 /**
- * Auth middleware — handles `?bootstrap=…` and `?key=…` bootstraps, and
- * protects `/fd/[slug]` paths.
+ * Auth proxy — handles `?bootstrap=…` and `?key=…` bootstraps, and protects
+ * `/fd/[slug]` paths.
+ *
+ * Renamed from `middleware.ts` per Next 16's `proxy` file convention (#62).
+ * Same runtime semantics; same matcher; same signature. The codemod is
+ * `npx @next/codemod@canary middleware-to-proxy .` — we did the rename
+ * manually to also sweep comment/doc references and add proxy.test.ts (#92).
  *
  * Runs on the Edge runtime. Uses Upstash REST (fetch-based) so KV calls work.
  *
@@ -63,14 +68,14 @@ async function signedRedirectTo(session: Session, origin: string): Promise<NextR
   return res;
 }
 
-export async function middleware(req: NextRequest): Promise<NextResponse> {
+export async function proxy(req: NextRequest): Promise<NextResponse> {
   const url = req.nextUrl;
 
   // ── ?bootstrap= (#73 — preferred path) ─────────────────────────────
   // `getRedis()` is called LAZILY inside each branch that needs KV — calling
-  // it at the top of `middleware()` would throw on every page hit (incl.
-  // bare `/` and cookie-only `/fd/[slug]`) when KV env is missing, which is
-  // the local-dev default.
+  // it at the top of `proxy()` would throw on every page hit (incl. bare `/`
+  // and cookie-only `/fd/[slug]`) when KV env is missing, which is the
+  // local-dev default. Pinned by `proxy.test.ts` (#92).
   const bootstrapParam = url.searchParams.get('bootstrap');
   if (bootstrapParam) {
     const redis = getRedis();
