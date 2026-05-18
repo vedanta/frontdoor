@@ -26,12 +26,6 @@
 # target explicit at the call site and prevents the "oh I meant local"
 # mistake on state-mutating ops.
 #
-# The split mirrors the operational reality: every action exists in both
-# environments and does the same thing — only the URL and secret change.
-# Putting env in the command path (rather than a --local flag) makes the
-# target explicit at the call site and prevents the "oh I meant local"
-# mistake on state-mutating ops.
-#
 # Implementation pattern:
 #   - One shared `_impl_<action>()` carries the logic (curl + display +
 #     status classification).
