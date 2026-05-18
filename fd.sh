@@ -541,12 +541,17 @@ _impl_cache_revalidate() {
 # Print the apiKey for a known user (#96). Reuses _resolve_apikey_for_email
 # from #89 — this is the read that the API deliberately doesn't expose.
 #
+# Default mode also prints a browser-paste URL (legacy ?key= flow, kept for
+# 60 days per #73's middleware) so the operator can one-click into the user's
+# dashboard for troubleshooting. The URL embeds the key — same care applies.
+#
 # No --confirm flag: KV creds are already the access barrier. Adding more
 # friction is theatre — the actual cost (terminal scrollback leak) happens
 # the moment the key appears, which --confirm doesn't prevent.
 #
-# --quiet: suppress the warning + log lines so `KEY=$(./fd.sh user reveal ... --quiet)`
-# captures just the key. Errors still go to stderr.
+# --quiet: suppress the warning + log + URL lines so
+# `KEY=$(./fd.sh user reveal ... --quiet)` captures just the key.
+# Errors still go to stderr.
 _impl_user_reveal() {
   local email="${1:-}"
   if [[ -z "$email" ]]; then
@@ -580,11 +585,20 @@ _impl_user_reveal() {
     return 0
   fi
 
+  # Browser URL uses the legacy `?key=` bootstrap path (kept for 60 days per
+  # #73). Visiting it sets the session cookie and lands at the user's
+  # /fd/{slug}. The URL embeds the apiKey — same threat model as the key
+  # itself; the warning covers both.
+  local browser_url="${FD_PROD_BASE_URL%/}/?key=$api_key"
+
   log "Revealing apiKey for $email"
-  warn "This is a long-lived secret. Don't paste into untrusted terminals"
-  echo "    or share via insecure channels. Rotate via re-signup if leaked." >&2
+  warn "Long-lived secret. The key AND the URL below both expose it —"
+  echo "    don't share via insecure channels. Rotate via re-signup if leaked." >&2
   echo
   echo "  $api_key"
+  echo
+  echo "  $(dim "Browser URL — paste to bootstrap a session cookie + land at /fd/{slug}:")"
+  echo "  $browser_url"
   echo
 }
 
