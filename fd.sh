@@ -598,39 +598,82 @@ _impl_cache_revalidate() {
 
 # ── v0.3 inspection + cache-debugging implementations (#58) ───────────────
 
-# _impl_status <base_url> <env_label>
-# Discovery action — quick "is this env up?" check. Times a request to the
-# root path (which redirects to /fd/* logic via the proxy, or to GH Pages
-# marketing for prod). Reports HTTP code, total time, target URL.
-_impl_status() {
-  local base_url="$1" env_label="$2"
-  local url="${base_url%/}/"
-  log "Checking $env_label health"
-  echo "  $(dim "GET $url")"
-  echo
-
+# _probe <label> <method> <path-from-base> <expected-code> [body-grep-token]
+# Run one HTTP check against $1's $3 and assert the response code matches $4.
+# Prints a single aligned status line. Returns 0 on match, 1 otherwise.
+# Sets globals: PROBE_LAST_OK (0/1), PROBE_LAST_MS (int).
+PROBE_LAST_OK=0
+PROBE_LAST_MS=0
+_probe() {
+  local label="$1" method="$2" path="$3" expected="$4" base_url="$5"
+  local url="${base_url%/}${path}"
   local out
   out=$(curl -sS --max-time 10 -o /dev/null \
-    -w '%{http_code} %{time_total}\n' "$url" 2>&1) || {
-      err "Could not reach $url"
-      echo "    $(if [[ "$env_label" == "local" ]]; then echo "Dev server not running? ./fd.sh local server start"; else echo "Network or DNS issue? Try in a browser."; fi)" >&2
-      exit 1
+    -X "$method" \
+    -w '%{http_code} %{time_total} %{size_download}' "$url" 2>&1) || {
+      printf "  %-19s %s %s → %s%s%s  (curl failed)\n" \
+        "$label" "$method" "$path" "$C_RED" "ERR" "$C_RESET"
+      PROBE_LAST_OK=0
+      return 1
     }
-
-  local code time
+  local code time size ms
   code=$(echo "$out" | awk '{print $1}')
   time=$(echo "$out" | awk '{print $2}')
-  # Format time as ms with 0 decimals (curl reports seconds with microsecond precision).
-  local ms
+  size=$(echo "$out" | awk '{print $3}')
   ms=$(awk "BEGIN { printf \"%d\", $time * 1000 }")
+  PROBE_LAST_MS="$ms"
 
-  case "$code" in
-    2??)            ok  "$env_label up · HTTP $code · ${ms}ms" ;;
-    3??)            ok  "$env_label up · HTTP $code · ${ms}ms (redirect — expected for prod marketing rewrite)" ;;
-    4??|5??)        err "$env_label responded HTTP $code in ${ms}ms (unexpected)" ; exit 1 ;;
-    000)            err "No response from $url" ; exit 1 ;;
-    *)              err "Unexpected response $code" ; exit 1 ;;
-  esac
+  local marker note
+  if [[ "$code" == "$expected" ]]; then
+    marker="${C_GREEN}✓${C_RESET}"
+    PROBE_LAST_OK=1
+    note=""
+  else
+    marker="${C_RED}✗${C_RESET}"
+    PROBE_LAST_OK=0
+    note=" (expected $expected)"
+  fi
+
+  printf "  %b %-19s %s %-13s → %s  %s\n" \
+    "$marker" "$label" "$method" "$path" "$code" \
+    "$(dim "${ms}ms${size:+ · ${size}B}${note}")"
+}
+
+# _impl_status <base_url> <env_label>
+# Multi-probe health check (#79 fix). Three unauth'd checks confirm the
+# distinct layers of the stack are alive:
+#   1. /            → 200 — marketing rewrite (proxy fallback to GH Pages)
+#   2. /api/user    → 401 — route handler responds + auth gate works
+#   3. /fd/bogus    → 307 — proxy redirect logic works
+# Green only if all three match expected codes.
+_impl_status() {
+  local base_url="$1" env_label="$2"
+  log "Checking $env_label health"
+  echo "  $(dim "$base_url")"
+  echo
+
+  local start_ts
+  start_ts=$(date +%s%N)
+  local greens=0 total=3
+
+  _probe "marketing rewrite" GET "/"          200 "$base_url" && ((greens++)) || true
+  _probe "app route handler" GET "/api/user"  401 "$base_url" && ((greens++)) || true
+  _probe "proxy redirect"    GET "/fd/bogus"  307 "$base_url" && ((greens++)) || true
+
+  local end_ts ms
+  end_ts=$(date +%s%N)
+  ms=$(( (end_ts - start_ts) / 1000000 ))
+
+  echo
+  if (( greens == total )); then
+    ok "$env_label healthy · $greens/$total probes green · ${ms}ms total"
+  else
+    err "$env_label unhealthy · $greens/$total probes green · ${ms}ms total"
+    if [[ "$env_label" == "local" ]]; then
+      echo "    Dev server not running? ./fd.sh local server start" >&2
+    fi
+    exit 1
+  fi
 }
 
 # Resolve the most-recent production deployment URL via `vercel ls --prod`.
