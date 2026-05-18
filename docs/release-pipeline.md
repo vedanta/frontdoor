@@ -62,7 +62,7 @@ curl -sSI "https://frontdoor.barooah.io/" | head -1   # 200 OK
 gh release create "$VERSION" --generate-notes --title "$VERSION — <theme>"
 ```
 
-This will be automated by `/fd-release` (issue #78) — playbook-style skill, judgment stays live.
+**This is automated by [`/fd-release`](../.claude/skills/fd-release.md)** — playbook-style skill, judgment stays live. Two HITL gates (version + notes); everything else flows.
 
 ## Versioning (semver in the 0.0.x phase)
 
@@ -78,7 +78,7 @@ So: v0.0.3, v0.0.4, … then `batch:auth-identity` finishing might trigger v0.1.
 
 ## Cadence
 
-**Ad-hoc / on-demand.** Release when there's something worth shipping, not on a schedule. The `/fd-release status` action will surface "X commits unreleased, Y days since last release" as a nudge if drift accumulates.
+**Ad-hoc / on-demand.** Release when there's something worth shipping, not on a schedule. `/fd-release status` surfaces "X commits unreleased, Y days since last release" as a nudge if drift accumulates.
 
 ## Emergency bypass
 
@@ -130,7 +130,7 @@ This is the standard CI/CD discipline; just making it explicit for a project tha
 ## Related
 
 - Issue [#77](https://github.com/vedanta/frontdoor/issues/77) — this work (Vercel gate)
-- Issue [#78](https://github.com/vedanta/frontdoor/issues/78) — `/fd-release` skill v0.1
+- [`.claude/skills/fd-release.md`](../.claude/skills/fd-release.md) — `/fd-release` skill (issue [#78](https://github.com/vedanta/frontdoor/issues/78))
 - Issue [#79](https://github.com/vedanta/frontdoor/issues/79) — `/fd-release` v0.2: rollback support
 - [`ops/vercel-ignore-build.sh`](../ops/vercel-ignore-build.sh) — the script itself
 - [`vercel.json`](../vercel.json) — the wiring
