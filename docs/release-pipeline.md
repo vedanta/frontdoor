@@ -99,14 +99,31 @@ This bypass leaves a clear audit trail in git history. Don't undo via Vercel das
 
 ## Rollback
 
-**Forward-only rollback for now.** To revert a bad deployment:
+**Forward-only via Vercel promote.** Vercel keeps every deployment forever; rollback points the production alias at a past one.
 
-1. Identify a known-good past tag (e.g., `v0.0.2`).
-2. Use Vercel dashboard → Deployments → find the past tag's deployment → **Promote to Production**.
+Use the skill:
 
-This points production at the past build instantly — no rebuild needed (Vercel keeps every deployment forever).
+```bash
+/fd-release rollback v0.0.4
+```
 
-`/fd-release rollback <tag>` (issue #79) will automate this. Until then, the manual path above works.
+Or the primitive directly:
+
+```bash
+./fd.sh prod promote v0.0.4 --confirm v0.0.4
+```
+
+What rollback does:
+- Resolves the tag → commit SHA → Vercel deployment URL
+- `vercel promote <url>` — the past build becomes the new live production
+- Instant, no rebuild, no code revert
+
+What rollback does NOT do:
+- Change `main` HEAD (git history unchanged)
+- Create a tag or release page (it's an ops action, not a release event)
+- Delete the previously-live deployment (Vercel retains it; re-promotable)
+
+After rollback, the next `/fd-release` will return production to whatever the latest tag is. Use the rollback for emergencies; ship a proper fix-forward for permanent reverts.
 
 ## Why tag-gate at all
 
@@ -130,7 +147,7 @@ This is the standard CI/CD discipline; just making it explicit for a project tha
 ## Related
 
 - Issue [#77](https://github.com/vedanta/frontdoor/issues/77) — this work (Vercel gate)
-- [`.claude/skills/fd-release.md`](../.claude/skills/fd-release.md) — `/fd-release` skill (issue [#78](https://github.com/vedanta/frontdoor/issues/78))
-- Issue [#79](https://github.com/vedanta/frontdoor/issues/79) — `/fd-release` v0.2: rollback support
+- [`.claude/skills/fd-release.md`](../.claude/skills/fd-release.md) — `/fd-release` skill (issues [#78](https://github.com/vedanta/frontdoor/issues/78) + [#79](https://github.com/vedanta/frontdoor/issues/79))
+- [`fd.sh`](../fd.sh) — `prod watch` (issue [#103](https://github.com/vedanta/frontdoor/issues/103)) and `prod promote` primitives
 - [`ops/vercel-ignore-build.sh`](../ops/vercel-ignore-build.sh) — the script itself
 - [`vercel.json`](../vercel.json) — the wiring
