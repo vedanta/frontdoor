@@ -139,6 +139,7 @@ show_help_user() {
   _action "user update <email>"   "Update name/timezone (PUT /api/user) — flags below"
   _action "user delete <email>"   "Delete + wipe KV (DELETE /api/user) — needs --confirm"
   _action "user list"             "Enumerate all users (SMEMBERS users)"
+  _action "user reveal <email>"   "Print apiKey (read-only; supports --quiet for piping)"
 }
 
 show_help() {
@@ -536,6 +537,71 @@ _impl_cache_revalidate() {
 # (resolved from KV). They share the same "resolve email → apiKey → request"
 # preamble, so each impl owns just its request + response handling.
 
+# _impl_user_reveal <email> [--quiet]
+# Print the apiKey for a known user (#96). Reuses _resolve_apikey_for_email
+# from #89 — this is the read that the API deliberately doesn't expose.
+#
+# Default mode also prints a browser-paste URL (legacy ?key= flow, kept for
+# 60 days per #73's middleware) so the operator can one-click into the user's
+# dashboard for troubleshooting. The URL embeds the key — same care applies.
+#
+# No --confirm flag: KV creds are already the access barrier. Adding more
+# friction is theatre — the actual cost (terminal scrollback leak) happens
+# the moment the key appears, which --confirm doesn't prevent.
+#
+# --quiet: suppress the warning + log + URL lines so
+# `KEY=$(./fd.sh user reveal ... --quiet)` captures just the key.
+# Errors still go to stderr.
+_impl_user_reveal() {
+  local email="${1:-}"
+  if [[ -z "$email" ]]; then
+    err "missing email"
+    echo "    usage: ./fd.sh user reveal <email> [--quiet]" >&2
+    exit 64
+  fi
+  if ! looks_like_email "$email"; then
+    err "'$email' doesn't look like a valid email"
+    exit 64
+  fi
+  shift
+
+  local quiet=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --quiet) quiet=1; shift ;;
+      *) err "unknown flag: $1"
+         echo "    usage: ./fd.sh user reveal <email> [--quiet]" >&2
+         exit 64 ;;
+    esac
+  done
+
+  local api_key
+  api_key=$(_resolve_apikey_for_email "$email")
+
+  if (( quiet )); then
+    # Stdout = key only, no trailing whitespace beyond the key's own newline.
+    # Lets `KEY=$(./fd.sh user reveal foo@x.com --quiet)` work cleanly.
+    echo "$api_key"
+    return 0
+  fi
+
+  # Browser URL uses the legacy `?key=` bootstrap path (kept for 60 days per
+  # #73). Visiting it sets the session cookie and lands at the user's
+  # /fd/{slug}. The URL embeds the apiKey — same threat model as the key
+  # itself; the warning covers both.
+  local browser_url="${FD_PROD_BASE_URL%/}/?key=$api_key"
+
+  log "Revealing apiKey for $email"
+  warn "Long-lived secret. The key AND the URL below both expose it —"
+  echo "    don't share via insecure channels. Rotate via re-signup if leaked." >&2
+  echo
+  echo "  $api_key"
+  echo
+  echo "  $(dim "Browser URL — paste to bootstrap a session cookie + land at /fd/{slug}:")"
+  echo "  $browser_url"
+  echo
+}
+
 # _impl_user_get <email>
 _impl_user_get() {
   local email="${1:-}"
@@ -751,6 +817,7 @@ user_get()    { require_curl; require_jq; require_prod_kv_creds; _impl_user_get 
 user_update() { require_curl; require_jq; require_prod_kv_creds; _impl_user_update "$@"; }
 user_delete() { require_curl; require_jq; require_prod_kv_creds; _impl_user_delete "$@"; }
 user_list()   { require_curl; require_jq; require_prod_kv_creds; _impl_user_list   "$@"; }
+user_reveal() { require_jq; require_prod_kv_creds; _impl_user_reveal "$@"; }
 
 # ── Local server lifecycle actions (local-only; prod is Vercel) ────────────
 
@@ -1084,14 +1151,16 @@ user_dispatch() {
     update) user_update "$@" ;;
     delete) user_delete "$@" ;;
     list)   user_list   "$@" ;;
+    reveal) user_reveal "$@" ;;
     help)   _subgroup_help "user  (prod-only)" \
               "signup <email>"  "Email a signup link" \
               "get <email>"     "Fetch the user record" \
               "update <email>"  "Update fields: --name X / --timezone Y" \
               "delete <email>"  "Delete + wipe KV: --confirm <email>" \
-              "list"            "Enumerate all users" ;;
+              "list"            "Enumerate all users" \
+              "reveal <email>"  "Print apiKey (read-only; --quiet for piping)" ;;
     *) err "unknown user action: $action"
-       echo "    available: signup, get, update, delete, list, help" >&2
+       echo "    available: signup, get, update, delete, list, reveal, help" >&2
        exit 64 ;;
   esac
 }
