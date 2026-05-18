@@ -13,7 +13,7 @@
  *     DEFAULT_CONFIG; writes every KV key space (incl. SADD users) plus the
  *     bootstrap:{token} entry with `BOOTSTRAP_TOKEN_TTL_SEC` expiry (#73).
  *   - Email contains the `?bootstrap=` URL (not `?key=`) — apiKey only flows
- *     through Bearer/curl from here on; middleware keeps `?key=` for 60 days
+ *     through Bearer/curl from here on; the proxy keeps `?key=` for 60 days
  *     as a backwards-compat fallback for emails sent before this change.
  *
  * See docs/architecture.md §3.1 for the canonical flow.
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
    * re-signup). Returns the URL to embed in the email.
    *
    * Set with Redis `EX` so the key auto-prunes; embedded `exp` field is a
-   * defensive second check in middleware.
+   * defensive second check in the proxy.
    */
   async function issueBootstrap(forUserId: string, forSlug: string): Promise<string> {
     const token = mintBootstrapToken();

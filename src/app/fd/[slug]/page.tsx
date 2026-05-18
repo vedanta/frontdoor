@@ -1,7 +1,7 @@
 /**
  * Per-user dashboard — the real composition.
  *
- *   1. Cookie is already verified + slug-matched by middleware (src/middleware.ts);
+ *   1. Cookie is already verified + slug-matched by the proxy (src/proxy.ts);
  *      we just read `userId` from the session for the config lookup.
  *   2. Load the user's `config:{userId}` from KV.
  *   3. Render the 6 sections in order; for each widget, render its component

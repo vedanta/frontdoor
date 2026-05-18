@@ -12,8 +12,8 @@
  *   practice (a fresh slug is re-rolled on collision in the signup endpoint,
  *   though at MVP scale it will essentially never happen).
  *
- * Backwards-compat: the auth gate (middleware, getSessionFromBearer) does
- * NOT validate the prefix — keys are opaque tokens looked up in KV. Existing
+ * Backwards-compat: the auth gate (proxy, getSessionFromBearer) does NOT
+ * validate the prefix — keys are opaque tokens looked up in KV. Existing
  * pre-prefix keys keep working forever. The prefix is mint-side only.
  */
 
@@ -72,7 +72,7 @@ export function buildBootstrapUrl(token: string, origin: string): string {
 
 /**
  * @deprecated Use `buildBootstrapUrl` (#73). Kept for the 60-day backwards-compat
- * window during which the `?key=` middleware path is still served.
+ * window during which the `?key=` proxy path is still served.
  */
 export function buildKeyUrl(key: string, origin: string): string {
   return `${origin}/?key=${key}`;
