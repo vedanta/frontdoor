@@ -5,13 +5,16 @@
  * Run via: `pnpm seed:test-user`
  *
  * Default args:
- *   --email dev@frontdoor.app
- *   --key   dev0000000000000000000000000000ab   (32 hex chars; remember/share)
- *   --slug  devdev01                            (8 hex chars)
+ *   --email     dev@frontdoor.app
+ *   --key       deadbeefdeadbeefdeadbeefdeadbeef   (32 hex chars; remember/share)
+ *   --slug      deadbeef                           (8 hex chars)
+ *   --userId    u_dev_local
+ *   --name      dev user                           (#69 — display name)
+ *   --timezone  America/New_York                   (#69 — IANA tz)
  *
  * Idempotent. Re-running with the same args overwrites cleanly. The script
- * also exports `seedUser(...)` so #27's Playwright fixtures can call it
- * directly without spawning a subprocess.
+ * also exports `seedUser(...)` so Playwright fixtures (e2e/global-setup.ts)
+ * can call it directly without spawning a subprocess.
  *
  * NOT a production code path. Lives under scripts/, never imported by
  * src/app/* or middleware. Lets you `curl /?key=<that key>` (or visit
@@ -64,6 +67,10 @@ const DEFAULTS = {
   // 8 hex chars — same shape as signup-minted slugs
   slug: 'deadbeef',
   userId: 'u_dev_local',
+  // Optional UserRecord fields (#69). Seeded so /api/user E2E tests can
+  // assert on specific values; harmless to existing E2E that ignores them.
+  name: 'dev user',
+  timezone: 'America/New_York',
 };
 
 export type SeedArgs = {
@@ -71,6 +78,8 @@ export type SeedArgs = {
   apiKey?: string;
   slug?: string;
   userId?: string;
+  name?: string;
+  timezone?: string;
 };
 
 export type SeededUser = UserRecord & { userId: string };
@@ -85,12 +94,16 @@ export async function seedUser(args: SeedArgs = {}): Promise<SeededUser> {
   const apiKey = args.apiKey ?? DEFAULTS.apiKey;
   const slug = args.slug ?? DEFAULTS.slug;
   const userId = args.userId ?? DEFAULTS.userId;
+  const name = args.name ?? DEFAULTS.name;
+  const timezone = args.timezone ?? DEFAULTS.timezone;
 
   const redis = getRedis();
   const user: UserRecord = {
     email,
     apiKey,
     slug,
+    name,
+    timezone,
     createdAt: new Date().toISOString(),
   };
 
@@ -113,6 +126,8 @@ async function main(): Promise<void> {
       key: { type: 'string' },
       slug: { type: 'string' },
       userId: { type: 'string' },
+      name: { type: 'string' },
+      timezone: { type: 'string' },
     },
   });
 
@@ -121,13 +136,17 @@ async function main(): Promise<void> {
     apiKey: values.key,
     slug: values.slug,
     userId: values.userId,
+    name: values.name,
+    timezone: values.timezone,
   });
 
   console.log('✓ seeded test user');
-  console.log(`  email   : ${seeded.email}`);
-  console.log(`  userId  : ${seeded.userId}`);
-  console.log(`  slug    : ${seeded.slug}`);
-  console.log(`  apiKey  : ${seeded.apiKey}`);
+  console.log(`  email    : ${seeded.email}`);
+  console.log(`  userId   : ${seeded.userId}`);
+  console.log(`  slug     : ${seeded.slug}`);
+  console.log(`  apiKey   : ${seeded.apiKey}`);
+  console.log(`  name     : ${seeded.name}`);
+  console.log(`  timezone : ${seeded.timezone}`);
   console.log('');
   console.log('open the dashboard:');
   console.log(`  http://localhost:3000/?key=${seeded.apiKey}`);
