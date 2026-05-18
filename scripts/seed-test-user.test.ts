@@ -45,7 +45,7 @@ describe('seedUser', () => {
     const result = await seedUser();
 
     expect(result.email).toBe('dev@frontdoor.app');
-    expect(result.apiKey).toMatch(/^[0-9a-f]{32}$/);
+    expect(result.apiKey).toMatch(/^fd_[0-9a-f]{32}$/); // #72 — `fd_` prefix
     expect(result.slug).toMatch(/^[0-9a-f]{8}$/);
     expect(result.userId).toBe('u_dev_local');
 

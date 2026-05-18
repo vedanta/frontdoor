@@ -4,11 +4,11 @@ import { expect, test } from '@playwright/test';
  * Auth flow E2E — the full middleware contract under PR #45.
  *
  * Uses the seed-test-user fixture (global-setup) — the known apiKey
- * `deadbeefdeadbeefdeadbeefdeadbeef` and slug `deadbeef`.
+ * `fd_deadbeefdeadbeefdeadbeefdeadbeef` (#72 prefix) and slug `deadbeef`.
  *
  * Skips when KV isn't configured (CI without env vars).
  */
-const SEED_KEY = 'deadbeefdeadbeefdeadbeefdeadbeef';
+const SEED_KEY = 'fd_deadbeefdeadbeefdeadbeefdeadbeef';
 const SEED_SLUG = 'deadbeef';
 
 const hasKV = !!process.env.KV_REST_API_URL;

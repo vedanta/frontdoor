@@ -63,7 +63,7 @@ function emptyReq(method: 'PUT' | 'DELETE'): NextRequest {
 function seedUser(overrides: Partial<{ email: string; name: string; timezone: string }> = {}) {
   const userId = 'u_1';
   const slug = 'deadbeef';
-  const apiKey = 'deadbeefdeadbeefdeadbeefdeadbeef';
+  const apiKey = 'fd_deadbeefdeadbeefdeadbeefdeadbeef'; // #72-format
   const email = overrides.email ?? 'me@example.com';
   const user = {
     email,

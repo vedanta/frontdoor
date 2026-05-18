@@ -14,7 +14,7 @@ import { expect, test } from '@playwright/test';
 
 // Mirrors the DEFAULTS in `scripts/seed-test-user.ts`. Kept in sync by
 // convention — if either side changes, update both.
-const SEED_KEY = 'deadbeefdeadbeefdeadbeefdeadbeef';
+const SEED_KEY = 'fd_deadbeefdeadbeefdeadbeefdeadbeef';
 const SEED_SLUG = 'deadbeef';
 const SEED_EMAIL = 'dev@frontdoor.app';
 const SEED_NAME = 'dev user';
