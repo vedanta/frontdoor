@@ -84,20 +84,42 @@ describe('WeatherWidget', () => {
     source,
   });
 
-  it('renders location label when location prop has a city (#105)', () => {
+  it('renders city alone for edge-geo source (IP precision; coords would mislead)', () => {
     const { container } = render(
       <WeatherWidget
         widget={widget}
         data={data}
-        location={mkLocation('user-saved', 'Boulder, CO')}
+        location={mkLocation('edge-geo', 'Boulder, CO')}
       />,
     );
     expect(container.querySelector('.weather-location-label')?.textContent).toBe('Boulder, CO');
   });
 
-  it('renders coords when location has no city', () => {
+  it('renders city · coords for user-saved source (GPS-precise; #110)', () => {
+    const { container } = render(
+      <WeatherWidget
+        widget={widget}
+        data={data}
+        location={mkLocation('user-saved', 'Tokyo, Tokyo')}
+      />,
+    );
+    expect(container.querySelector('.weather-location-label')?.textContent).toBe(
+      'Tokyo, Tokyo · 40.01°, -105.27°',
+    );
+  });
+
+  it('renders coords-only when location has no city (#110)', () => {
     const { container } = render(
       <WeatherWidget widget={widget} data={data} location={mkLocation('edge-geo', null)} />,
+    );
+    expect(container.querySelector('.weather-location-label')?.textContent).toBe(
+      '40.01°, -105.27°',
+    );
+  });
+
+  it('renders coords-only for user-saved when reverse-geocode failed (#110)', () => {
+    const { container } = render(
+      <WeatherWidget widget={widget} data={data} location={mkLocation('user-saved', null)} />,
     );
     expect(container.querySelector('.weather-location-label')?.textContent).toBe(
       '40.01°, -105.27°',

@@ -70,12 +70,23 @@ const shortDay = (iso: string) => {
 /** Pull HH:MM from an ISO-ish datetime string. */
 const timeOnly = (iso: string) => iso.split('T')[1] ?? iso;
 
-/** Format the resolved location for the small footer label. */
+/**
+ * Format the resolved location for the small footer label.
+ *
+ * For `user-saved` — the only source where the user actively granted GPS
+ * precision — we render both city + coords ("Tokyo · 35.68°, 139.69°") so
+ * the precision they opted into is actually visible (#110). For all other
+ * sources, city alone (edge-geo city is IP-precision; coords would mislead).
+ * When city is missing entirely (geocode failed, ocean, etc.) we fall back
+ * to coords-only so the label never disappears.
+ */
 function formatLocationLabel(loc: ResolvedLocation): string {
-  if (loc.city) return loc.city;
-  // No city — show coords (rounded to 2 decimals; same resolution as the cache key).
   const round = (n: number) => Math.round(n * 100) / 100;
-  return `${round(loc.lat)}°, ${round(loc.lon)}°`;
+  const coords = `${round(loc.lat)}°, ${round(loc.lon)}°`;
+  if (loc.source === 'user-saved') {
+    return loc.city ? `${loc.city} · ${coords}` : coords;
+  }
+  return loc.city ?? coords;
 }
 
 export function WeatherWidget({ widget, data, fetchedAt, location }: Props) {

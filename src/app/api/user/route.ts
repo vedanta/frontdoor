@@ -34,6 +34,7 @@ import {
   type UserRecord,
 } from '@/lib/kv';
 import { COOKIE_NAME, getSession } from '@/lib/auth';
+import { composeCityLabel, reverseGeocode } from '@/lib/data/sources/reverse-geocode';
 
 /** Public-facing shape — `apiKey` stripped. */
 type PublicUser = Omit<UserRecord, 'apiKey'>;
@@ -102,9 +103,21 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   const user = await loadUser(session.userId);
   if (!user) return notFound();
 
+  // #110 — when the browser-geolocation flow (`<UseMyLocation/>`) hands us
+  // lat+lon without an explicit city, reverse-geocode to a human label.
+  // Geocode failure is silently swallowed: lat/lon still persist; the weather
+  // widget's label just degrades to coords-only. We don't override an
+  // explicit `city` from the caller — that lets future "set my city manually"
+  // flows beat the geocoder.
+  const incoming: Partial<UserRecord> = { ...parsed.data };
+  if (incoming.lat !== undefined && incoming.lon !== undefined && incoming.city === undefined) {
+    const geo = await reverseGeocode(incoming.lat, incoming.lon);
+    if (geo) incoming.city = composeCityLabel(geo);
+  }
+
   // Shallow merge — only the keys the user sent get updated. Empty PUT body
   // is a valid no-op (returns the current record, lets clients verify state).
-  const next: UserRecord = { ...user, ...parsed.data };
+  const next: UserRecord = { ...user, ...incoming };
   await getRedis().set(userKey(session.userId), next);
   return NextResponse.json(sanitize(next));
 }

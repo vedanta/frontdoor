@@ -41,6 +41,17 @@ vi.mock('@/lib/auth', async (importOriginal) => {
   };
 });
 
+// Mock reverse-geocode (#110) — each test arranges return value.
+const mockReverseGeocode =
+  vi.fn<(lat: number, lon: number) => Promise<{ city: string; region?: string } | null>>();
+vi.mock('@/lib/data/sources/reverse-geocode', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    reverseGeocode: (lat: number, lon: number) => mockReverseGeocode(lat, lon),
+  };
+});
+
 import { DELETE, GET, PUT } from './route';
 import { NextRequest } from 'next/server';
 import { apiKeyKey, configKey, emailKey, slugKey, USERS_SET, userKey } from '@/lib/kv';
@@ -87,6 +98,8 @@ beforeEach(() => {
   kvStore.clear();
   kvSets.clear();
   mockSession = null;
+  mockReverseGeocode.mockReset();
+  mockReverseGeocode.mockResolvedValue(null);
 });
 
 // ── GET ────────────────────────────────────────────────────────────────
@@ -186,6 +199,61 @@ describe('PUT /api/user', () => {
     seedUser();
     const res = await PUT(emptyReq('PUT'));
     expect(res.status).toBe(400);
+  });
+
+  // ── #110: reverse-geocode-on-PUT ────────────────────────────────────
+
+  it('reverse-geocodes when lat+lon arrive without city; persists composed label', async () => {
+    seedUser();
+    mockReverseGeocode.mockResolvedValueOnce({ city: 'Tokyo', region: 'Tokyo' });
+
+    const res = await PUT(bodyReq('PUT', { lat: 35.68, lon: 139.69 }));
+    expect(res.status).toBe(200);
+
+    expect(mockReverseGeocode).toHaveBeenCalledWith(35.68, 139.69);
+    const stored = (await fakeRedis.get(userKey('u_1'))) as {
+      lat: number;
+      lon: number;
+      city: string;
+    };
+    expect(stored).toMatchObject({ lat: 35.68, lon: 139.69, city: 'Tokyo, Tokyo' });
+  });
+
+  it('does NOT reverse-geocode when caller supplies explicit city (caller wins)', async () => {
+    seedUser();
+    const res = await PUT(bodyReq('PUT', { lat: 35.68, lon: 139.69, city: 'My Custom Label' }));
+    expect(res.status).toBe(200);
+    expect(mockReverseGeocode).not.toHaveBeenCalled();
+
+    const stored = (await fakeRedis.get(userKey('u_1'))) as { city: string };
+    expect(stored.city).toBe('My Custom Label');
+  });
+
+  it('does NOT reverse-geocode when only lat (no lon) — would be incomplete coords', async () => {
+    seedUser();
+    // Zod won't let through a half-pair via the strict schema if the partner's
+    // missing? Actually it does — lat/lon are independently optional. The
+    // route's guard requires both.
+    const res = await PUT(bodyReq('PUT', { lat: 35.68 }));
+    expect(res.status).toBe(200);
+    expect(mockReverseGeocode).not.toHaveBeenCalled();
+  });
+
+  it('persists lat/lon even when reverse-geocode returns null (graceful degrade)', async () => {
+    seedUser();
+    mockReverseGeocode.mockResolvedValueOnce(null);
+
+    const res = await PUT(bodyReq('PUT', { lat: 0, lon: 0 }));
+    expect(res.status).toBe(200);
+
+    const stored = (await fakeRedis.get(userKey('u_1'))) as {
+      lat: number;
+      lon: number;
+      city?: string;
+    };
+    expect(stored.lat).toBe(0);
+    expect(stored.lon).toBe(0);
+    expect(stored.city).toBeUndefined();
   });
 });
 
