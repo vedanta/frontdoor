@@ -57,6 +57,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FD_PROD_BASE_URL="${FD_PROD_BASE_URL:-https://frontdoor.barooah.io}"
 FD_LOCAL_BASE_URL="${FD_LOCAL_BASE_URL:-http://localhost:3000}"
 
+# Seed test user's apiKey (mirrors scripts/seed-test-user.ts DEFAULTS). Used by
+# `local render` + `local open` to bootstrap a session against the dev server
+# (#107). If you rename it in seed-test-user.ts, rename here too.
+SEED_TEST_USER_KEY="fd_deadbeefdeadbeefdeadbeefdeadbeef"
+
 # Local server lifecycle state — kept in .cache/ (gitignored per CLAUDE.md).
 CACHE_DIR="$SCRIPT_DIR/.cache"
 DEV_PID_FILE="$CACHE_DIR/dev.pid"
@@ -104,15 +109,32 @@ dim()  { printf "%s%s%s"          "$C_DIM"    "$*"       "$C_RESET"; }
 _section() { printf "  %s%s%s  %s%s%s\n" "$C_BOLD" "$1" "$C_RESET" "$C_DIM" "$2" "$C_RESET"; }
 _action()  { printf "    %s%-32s%s%s\n"  "$C_CYAN" "$1" "$C_RESET" "$2"; }
 
+# Top-level help formatters (USAGE / GROUPS / COMMON / WORKFLOWS / NEEDS
+# sections that orient a new user). Redone here after the original commit
+# was lost from PR #104's squash-merge.
+_h()       { printf "\n  %s%s%s\n" "$C_BOLD" "$1" "$C_RESET"; }
+_group()   { printf "    %s%-9s%s  %-19s  %s%s%s\n" \
+                    "$C_CYAN" "$1" "$C_RESET" "$2" "$C_DIM" "$3" "$C_RESET"; }
+_example() {
+  local cmd="$1" note="${2:-}"
+  if [[ -n "$note" ]]; then
+    printf "    %s%-44s%s  %s# %s%s\n" "$C_CYAN" "$cmd" "$C_RESET" "$C_DIM" "$note" "$C_RESET"
+  else
+    printf "    %s%s%s\n" "$C_CYAN" "$cmd" "$C_RESET"
+  fi
+}
+_envvar()  { printf "    %s%-32s%s  %s%s%s\n" \
+                    "$C_BOLD" "$1" "$C_RESET" "$C_DIM" "$2" "$C_RESET"; }
+
 # show_help_prod / show_help_local print one env section each (no overall
 # header). Used by both the top-level show_help (which wraps them in the
 # `fd CLI — ...` banner) AND by per-env dispatchers handling the `help`
 # action (./fd.sh prod help, ./fd.sh local help).
 show_help_prod() {
   _section "Production" "($FD_PROD_BASE_URL · cache refresh runs daily 03:00 UTC)"
-  _action "status"                    "Health check — GET / + report code/time"
-  _action "watch [url]"               "Poll a deployment until Ready/Error (#103)"
-  _action "promote <url>"             "Promote a past deployment URL to live; --confirm <url> (#79)"
+  _action "status"                    "Multi-probe health check (marketing + api + proxy)"
+  _action "watch [url]"               "Poll a deployment until Ready/Error/Canceled"
+  _action "promote <url>"             "Promote past deployment URL to live (rollback); --confirm <url>"
   _action "cache refresh"             "Warm data + revalidate pages (= /api/refresh)"
   _action "cache revalidate [userId]" "Revalidate page ISR only"
   _action "cache purge <source>..."   "DEL today's cache keys for sources (or --all)"
@@ -120,17 +142,19 @@ show_help_prod() {
 
 show_help_local() {
   _section "Local" "($FD_LOCAL_BASE_URL · no schedule)"
-  _action "status"                    "Health check — GET / + report code/time"
+  _action "status"                    "Multi-probe health check (marketing + api + proxy)"
+  _action "render [--write PATH]"     "Bootstrap + render via curl; exit-coded for scripts"
+  _action "open"                      "Open dashboard in default browser (seed user)"
   _action "server start"              "Start \`pnpm dev\` (background, PID tracked)"
   _action "server stop"               "Stop gracefully (SIGTERM)"
   _action "server restart"            "Stop + start"
   _action "server kill"               "Force-kill (SIGKILL + clear port)"
   _action "server status"             "PID, uptime, URL, log path"
   _action "server logs"               "tail -f the dev log"
-  _action "user signup <email>"       "Create user via Resend-bypass (#70; no email)"
+  _action "user signup <email>"       "Create user via Resend-bypass (no email sent)"
   _action "cache refresh"             "Warm data + revalidate pages (against dev)"
   _action "cache revalidate [userId]" "Revalidate page ISR only (against dev)"
-  _action "cache purge <source>..."   "DEL today's cache keys (against prod KV)"
+  _action "cache purge <source>..."   "DEL today's cache keys (against shared KV)"
 }
 
 show_help_user() {
@@ -152,7 +176,42 @@ show_help_inspection() {
 
 show_help() {
   echo ""
-  echo -e "  ${C_BOLD}fd CLI${C_RESET}  —  ./fd.sh ${C_CYAN}<env|user|kv|apod>${C_RESET} ${C_CYAN}<subgroup>${C_RESET} <action> [args]"
+  printf "  %sfd CLI%s  —  operate frontdoor production + your local dev\n" "$C_BOLD" "$C_RESET"
+
+  _h "USAGE"
+  echo "    ./fd.sh <group> <action> [args]"
+  printf "    ./fd.sh <group> help                         %s# detail for one group%s\n" "$C_DIM" "$C_RESET"
+  printf "    ./fd.sh --help                               %s# this overview%s\n" "$C_DIM" "$C_RESET"
+
+  _h "GROUPS"
+  _group "prod"  "production ops"   "$FD_PROD_BASE_URL"
+  _group "local" "local dev"        "$FD_LOCAL_BASE_URL"
+  _group "user"  "user management"  "prod-only · Bearer auth via KV"
+  _group "kv"    "KV inspection"    "prod KV · read-only"
+  _group "apod"  "NASA APOD ping"   "verifies the upstream key"
+
+  _h "COMMON"
+  _example "./fd.sh local server start"              "boot the dev server"
+  _example "./fd.sh local render"                    "bootstrap + render via curl (#107)"
+  _example "./fd.sh local open"                      "open dashboard in default browser"
+  _example "./fd.sh local user signup foo@x.com"     "create local user without Resend email"
+  _example "./fd.sh prod status"                     "multi-probe health check"
+  _example "./fd.sh user list"                       "see all users in prod"
+  _example "./fd.sh user reveal foo@x.com"           "get apiKey for ops/debug"
+  _example "./fd.sh prod cache purge --all"          "force tomorrow's data re-fetch"
+  _example "./fd.sh apod"                            "verify NASA API key + see today's APOD"
+  _example "/fd-release"                             "release ceremony (Claude Code skill, not fd.sh)"
+
+  _h "WORKFLOWS  (multi-step patterns)"
+  echo "    $(dim "Test a local change end-to-end:")"
+  echo "      1.  ./fd.sh local server status            $(dim "# confirm server up")"
+  echo "      2.  ./fd.sh local render                   $(dim "# bootstrap + render; exit-coded")"
+  echo "      3.  ./fd.sh local open                     $(dim "# eyeball it in browser")"
+  echo ""
+  echo "    $(dim "Ship a release (skill, not fd.sh):")"
+  echo "      /fd-release                                $(dim "# full ceremony with HITL gates")"
+  echo "      /fd-release rollback v0.0.X                $(dim "# emergency rollback")"
+
   echo ""
   show_help_prod
   echo ""
@@ -161,6 +220,15 @@ show_help() {
   show_help_user
   echo ""
   show_help_inspection
+
+  _h "NEEDS in .env.local  (each is read lazily — only what you call needs it)"
+  _envvar "KV_REST_API_URL + TOKEN"  "user · kv · prod cache purge"
+  _envvar "PROD_CRON_SECRET"         "prod cache refresh · prod cache revalidate"
+  _envvar "CRON_SECRET"              "local cache refresh · local cache revalidate"
+  _envvar "COOKIE_SECRET"            "set automatically; the app reads it at runtime"
+  _envvar "NASA_API_KEY"             "apod"
+  _envvar "LOCAL_BOOTSTRAP_KEY"      "local user signup"
+
   echo ""
 }
 
@@ -841,6 +909,116 @@ EOF
   echo "  $(dim "Note:   main HEAD unchanged. Next /fd-release will return to the latest tag.")"
 }
 
+# _impl_local_render [--write PATH] [--quiet]
+# Bootstrap the local dev server via the seed user's `?key=...` URL (which
+# the proxy redirects to /fd/{slug} after setting the session cookie), follow
+# the redirect with a persisted cookie jar, time the full render, and report
+# HTTP code / size / duration + the most recent dev-log lines (handy for
+# spotting silent errors during render). Mirrors the curl-with-cookie-jar
+# dance previously typed by hand each time (#107).
+_impl_local_render() {
+  local out_path=""
+  local quiet=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --write)
+        [[ -n "${2:-}" ]] || { err "--write requires a path"; exit 64; }
+        out_path="$2"; shift 2 ;;
+      --quiet)
+        quiet=1; shift ;;
+      *) err "unknown flag: $1"
+         echo "    usage: ./fd.sh local render [--write PATH] [--quiet]" >&2
+         exit 64 ;;
+    esac
+  done
+
+  require_curl
+
+  local bootstrap_url="${FD_LOCAL_BASE_URL%/}/?key=${SEED_TEST_USER_KEY}"
+  local cookie_jar out_file
+  cookie_jar=$(mktemp)
+  out_file="${out_path:-$(mktemp)}"
+  # shellcheck disable=SC2064
+  trap "rm -f '$cookie_jar' $([[ -z "$out_path" ]] && printf %s "'$out_file'")" EXIT
+
+  if (( quiet == 0 )); then
+    log "Rendering local dashboard"
+    echo "  $(dim "bootstrap: $bootstrap_url → /fd/deadbeef")"
+    echo
+  fi
+
+  local result code size time
+  result=$(curl -sSL --max-time 60 -c "$cookie_jar" -b "$cookie_jar" \
+    "$bootstrap_url" \
+    -o "$out_file" \
+    -w "%{http_code} %{size_download} %{time_total}\n" 2>&1) || {
+      if (( quiet )); then exit 1; fi
+      err "curl failed (server not running? ./fd.sh local server start)"
+      exit 1
+    }
+
+  code=$(echo "$result" | awk '{print $1}')
+  size=$(echo "$result" | awk '{print $2}')
+  time=$(echo "$result" | awk '{print $3}')
+
+  if (( quiet )); then
+    case "$code" in
+      2??) exit 0 ;;
+      000) exit 2 ;;
+      *)   exit 1 ;;
+    esac
+  fi
+
+  local size_kb time_s
+  size_kb=$(awk "BEGIN { printf \"%d\", $size / 1024 }")
+  time_s=$(awk "BEGIN { printf \"%.1f\", $time }")
+
+  case "$code" in
+    2??)
+      ok "HTTP $code  ${size_kb}KB  rendered in ${time_s}s"
+      [[ -n "$out_path" ]] && echo "  $(dim "wrote: $out_path")"
+      ;;
+    000)
+      err "Timed out after 60s — server slow or stuck"
+      exit 2 ;;
+    *)
+      err "HTTP $code  (expected 2xx)"
+      exit 1 ;;
+  esac
+
+  echo
+  if [[ -f "$DEV_LOG_FILE" ]]; then
+    echo "  $(dim "Recent log (last 10 lines of $DEV_LOG_FILE):")"
+    tail -10 "$DEV_LOG_FILE" 2>&1 | sed 's/^/    /'
+  fi
+  echo
+}
+
+# _impl_local_open — launch the seed-user dashboard URL in the default
+# browser (#107). Pairs with `local render` for the split: render = "is it
+# working from a script" / open = "let me look at it."
+_impl_local_open() {
+  local url="${FD_LOCAL_BASE_URL%/}/?key=${SEED_TEST_USER_KEY}"
+  log "Opening $url"
+
+  local opener=""
+  if have open; then
+    opener="open"
+  elif have xdg-open; then
+    opener="xdg-open"
+  else
+    err "no browser-launcher found (need 'open' on macOS or 'xdg-open' on Linux)"
+    echo "    URL to visit manually: $url" >&2
+    exit 1
+  fi
+
+  if ! "$opener" "$url" 2>&1; then
+    err "$opener failed"
+    exit 1
+  fi
+  ok "launched ($opener)"
+}
+
 # _impl_apod — direct NASA APOD ping to verify the key + see today's image.
 # Reports title/date/media_type/url plus the rate-limit-remaining header.
 _impl_apod() {
@@ -1291,6 +1469,8 @@ local_cache_refresh()     { require_curl; require_local_cron_secret; _impl_cache
 local_cache_revalidate()  { require_curl; require_local_cron_secret; _impl_cache_revalidate "$FD_LOCAL_BASE_URL" "$CRON_SECRET" "CRON_SECRET" "local" "${1:-}"; }
 local_cache_purge()       { require_curl; require_jq; require_prod_kv_creds; _impl_cache_purge "$FD_LOCAL_BASE_URL" "$(date -u +%Y-%m-%d)" "local" "$@"; }
 local_status()            { require_curl; _impl_status "$FD_LOCAL_BASE_URL" "local"; }
+local_render()            { _impl_local_render "$@"; }  # #107
+local_open()              { _impl_local_open "$@"; }    # #107
 
 # Top-level inspection sections (#58). Both target prod artifacts (NASA key,
 # prod KV), so they're prod-implicit like `user`.
@@ -1674,7 +1854,20 @@ prod_dispatch() {
     status)  prod_status "$@" ;;
     watch)   prod_watch "$@" ;;
     promote) prod_promote "$@" ;;
-    help)    echo ""; show_help_prod; echo "" ;;
+    help)
+      echo ""
+      show_help_prod
+      _h "EXAMPLES"
+      _example "./fd.sh prod status"                "multi-probe health check"
+      _example "./fd.sh prod watch"                 "watch current deploy until Ready"
+      _example "./fd.sh prod cache refresh"         "manually trigger the daily cache cron"
+      _example "./fd.sh prod cache purge nasa-apod" "force re-fetch of today's APOD"
+      _example "./fd.sh prod cache purge --all"     "purge today's entire cache surface"
+      _h "NEEDS"
+      _envvar "PROD_CRON_SECRET"        "for cache refresh / revalidate"
+      _envvar "KV_REST_API_URL + TOKEN" "for cache purge"
+      echo ""
+      ;;
     user)    err "user is no longer under prod (#89) — use: ./fd.sh user $*"
              exit 64 ;;
     *) err "unknown prod subgroup: $sub"
@@ -1705,7 +1898,7 @@ local_dispatch() {
   local sub="${1:-}"
   if [[ -z "$sub" ]]; then
     err "local: missing subgroup"
-    echo "    available: server, cache, user, status, help" >&2
+    echo "    available: server, cache, user, status, render, open, help" >&2
     exit 64
   fi
   shift
@@ -1714,9 +1907,31 @@ local_dispatch() {
     cache)  local_cache_dispatch "$@" ;;
     user)   local_user_dispatch "$@" ;;
     status) local_status "$@" ;;
-    help)   echo ""; show_help_local; echo "" ;;
+    render) local_render "$@" ;;   # #107
+    open)   local_open "$@" ;;     # #107
+    help)
+      echo ""
+      show_help_local
+      _h "EXAMPLES"
+      _example "./fd.sh local server start"          "boot dev server in background"
+      _example "./fd.sh local render"                "bootstrap + render via curl (#107)"
+      _example "./fd.sh local render --write /tmp/x.html" "also dump response HTML for inspection"
+      _example "./fd.sh local render --quiet"        "silent; exit code only (for scripts)"
+      _example "./fd.sh local open"                  "open dashboard in default browser"
+      _example "./fd.sh local user signup foo@x.com" "create user without Resend email"
+      _example "./fd.sh local cache refresh"         "warm caches against dev"
+      _h "TEST-A-CHANGE WORKFLOW"
+      _example "./fd.sh local server status"         "1. confirm server is up"
+      _example "./fd.sh local render"                "2. bootstrap + render; check exit code"
+      _example "./fd.sh local open"                  "3. eyeball it in browser"
+      _h "NEEDS"
+      _envvar "CRON_SECRET"             "for cache refresh / revalidate"
+      _envvar "LOCAL_BOOTSTRAP_KEY"     "for user signup (no-Resend bypass)"
+      _envvar "KV_REST_API_URL + TOKEN" "for cache purge (writes to shared KV)"
+      echo ""
+      ;;
     *) err "unknown local subgroup: $sub"
-       echo "    available: server, cache, user, status, help" >&2
+       echo "    available: server, cache, user, status, render, open, help" >&2
        exit 64 ;;
   esac
 }
@@ -1733,9 +1948,19 @@ kv_dispatch() {
   case "$action" in
     keys) kv_keys_action "$@" ;;
     get)  kv_get_action "$@" ;;
-    help) _subgroup_help "kv  (prod-only · read-only)" \
-            "keys [prefix]"  "List KV keys matching prefix* (default: all)" \
-            "get <key>"      "Print KV value (jq-pretty if JSON)" ;;
+    help)
+      _subgroup_help "kv  (prod-only · read-only)" \
+        "keys [prefix]"  "List KV keys matching prefix* (default: all)" \
+        "get <key>"      "Print KV value (jq-pretty if JSON)"
+      _h "EXAMPLES"
+      _example "./fd.sh kv keys"                 "list every key in prod KV"
+      _example "./fd.sh kv keys user:"           "list user records"
+      _example "./fd.sh kv keys 'nasa-apod:'"    "see which dates' APOD is cached"
+      _example "./fd.sh kv get user:u_dev_local" "pretty-print one user record"
+      _h "NEEDS"
+      _envvar "KV_REST_API_URL + TOKEN" "for all kv actions"
+      echo ""
+      ;;
     *) err "unknown kv action: $action"
        echo "    available: keys, get, help" >&2
        exit 64 ;;
@@ -1747,7 +1972,7 @@ user_dispatch() {
   local action="${1:-}"
   if [[ -z "$action" ]]; then
     err "user: missing action"
-    echo "    available: signup, get, update, delete, list, help" >&2
+    echo "    available: signup, get, update, delete, list, reveal, help" >&2
     exit 64
   fi
   shift
@@ -1758,13 +1983,25 @@ user_dispatch() {
     delete) user_delete "$@" ;;
     list)   user_list   "$@" ;;
     reveal) user_reveal "$@" ;;
-    help)   _subgroup_help "user  (prod-only)" \
-              "signup <email>"  "Email a signup link" \
-              "get <email>"     "Fetch the user record" \
-              "update <email>"  "Update fields: --name X / --timezone Y" \
-              "delete <email>"  "Delete + wipe KV: --confirm <email>" \
-              "list"            "Enumerate all users" \
-              "reveal <email>"  "Print apiKey (read-only; --quiet for piping)" ;;
+    help)
+      _subgroup_help "user  (prod-only)" \
+        "signup <email>"  "Email a signup link" \
+        "get <email>"     "Fetch the user record" \
+        "update <email>"  "Update fields: --name X / --timezone Y" \
+        "delete <email>"  "Delete + wipe KV: --confirm <email>" \
+        "list"            "Enumerate all users" \
+        "reveal <email>"  "Print apiKey (read-only; --quiet for piping)"
+      _h "EXAMPLES"
+      _example "./fd.sh user list"                                  "see all users"
+      _example "./fd.sh user get foo@example.com"                   "fetch sanitized user record"
+      _example "./fd.sh user update foo@x.com --name 'Bob'"         "update display name"
+      _example "./fd.sh user reveal foo@x.com"                      "get apiKey for ops/debug"
+      _example "KEY=\$(./fd.sh user reveal foo@x.com --quiet)"       "capture apiKey for piping"
+      _example "./fd.sh user delete foo@x.com --confirm foo@x.com"  "destructive — wipes account"
+      _h "NEEDS"
+      _envvar "KV_REST_API_URL + TOKEN" "for resolving email → apiKey (Bearer auth)"
+      echo ""
+      ;;
     *) err "unknown user action: $action"
        echo "    available: signup, get, update, delete, list, reveal, help" >&2
        exit 64 ;;
