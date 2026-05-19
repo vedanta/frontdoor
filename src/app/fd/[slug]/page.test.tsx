@@ -21,10 +21,22 @@ vi.mock('@/lib/auth', () => ({
 
 // Mock notFound — Next normally throws and the framework handles it.
 // In test, we replace it with a sentinel error so we can assert on it.
+// useRouter is also stubbed (transitively needed by <UseMyLocation/> #105).
 vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
   },
+  useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }),
+}));
+
+// Mock next/headers — page.tsx reads Vercel edge geo via `headers()` (#105).
+// Per-test override via `mockEdgeHeaders.headers = {...}`; default is empty
+// (no edge geo present → resolveLocation falls through to fallback).
+const mockEdgeHeaders: { headers: Record<string, string> } = { headers: {} };
+vi.mock('next/headers', () => ({
+  headers: async () => ({
+    get: (name: string) => mockEdgeHeaders.headers[name.toLowerCase()] ?? null,
+  }),
 }));
 
 // Mock all the fetchers so the page renders deterministically.

@@ -38,11 +38,23 @@ import { fetchWikipediaFeatured } from '@/lib/data/sources/wikipedia';
 import { fetchWord } from '@/lib/data/sources/word';
 import type { FetchResult } from '@/lib/data/types';
 import type { ImageItem, TextItem } from '@/lib/data/sources/types';
+import { resolveLocation, type EdgeGeo, type UserLocation } from '@/lib/location';
 
 export type RenderedWidget = {
   element: React.JSX.Element;
   /** UTC date (YYYY-MM-DD) of the cache hit; null for static/non-data widgets. */
   fetchedAt: string | null;
+};
+
+/**
+ * Resolved environment passed into renderWidget — sources for layered
+ * location resolution (#105) and any future per-render context.
+ */
+export type RenderContext = {
+  /** UserRecord-saved location (highest non-override priority). */
+  userLocation?: UserLocation;
+  /** Vercel edge geo from request headers (fills in when neither widget nor user has coords). */
+  edgeGeo?: EdgeGeo;
 };
 
 /** Unwrap a FetchResult to `{ data, fetchedAt }`; failure → both null. */
@@ -51,7 +63,10 @@ function unwrap<T>(r: FetchResult<T>): { data: T | null; fetchedAt: string | nul
   return { data: null, fetchedAt: null };
 }
 
-export async function renderWidget(widget: Widget): Promise<RenderedWidget> {
+export async function renderWidget(
+  widget: Widget,
+  ctx: RenderContext = {},
+): Promise<RenderedWidget> {
   switch (widget.type) {
     case 'links':
       return { element: <LinksWidget widget={widget} />, fetchedAt: null };
@@ -120,9 +135,16 @@ export async function renderWidget(widget: Widget): Promise<RenderedWidget> {
     }
 
     case 'weather': {
-      const { data, fetchedAt } = unwrap(await fetchWeather(widget.lat, widget.lon));
+      // #105: layered location — widget config (rare per-widget override),
+      // UserRecord (the typical user location), Vercel edge geo, or NYC fallback.
+      const loc = resolveLocation({
+        widget: { lat: widget.lat, lon: widget.lon, city: widget.city },
+        user: ctx.userLocation,
+        edge: ctx.edgeGeo,
+      });
+      const { data, fetchedAt } = unwrap(await fetchWeather(loc.lat, loc.lon));
       return {
-        element: <WeatherWidget widget={widget} data={data} fetchedAt={fetchedAt} />,
+        element: <WeatherWidget widget={widget} data={data} fetchedAt={fetchedAt} location={loc} />,
         fetchedAt,
       };
     }

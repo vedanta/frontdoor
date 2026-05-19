@@ -22,8 +22,9 @@
  *      revalidation via the cron at 03:00 UTC, after /api/refresh warms KV).
  */
 import { notFound } from 'next/navigation';
+import { headers } from 'next/headers';
 import { Fragment } from 'react';
-import { configKey, getRedis } from '@/lib/kv';
+import { configKey, getRedis, userKey, type UserRecord } from '@/lib/kv';
 import { getSessionFromCookie } from '@/lib/auth';
 import { DashboardConfigSchema, type DashboardConfig } from '@/lib/config';
 import { Clock } from '@/components/Clock';
@@ -39,6 +40,7 @@ import {
   weekOfYear,
 } from '@/lib/colophon';
 import { fetchWeather } from '@/lib/data/sources/weather';
+import { readEdgeGeo, resolveLocation } from '@/lib/location';
 import { renderWidget } from './render-widget';
 
 // ISR — 24h fallback. /api/revalidate (cron + on-edit) overrides this.
@@ -65,11 +67,23 @@ export default async function DashboardPage({ params }: Props) {
 
   const shortcuts = buildShortcuts(config);
 
+  // ── Render context (#105 — layered location resolution) ────────────
+  // Load the user record (for any saved lat/lon/city) + read Vercel edge
+  // geo headers. Either may be absent; resolveLocation handles all paths.
+  const userRecord = await getRedis().get<UserRecord>(userKey(session.userId));
+  const edgeGeo = readEdgeGeo(await headers());
+  const renderCtx = {
+    userLocation: userRecord
+      ? { lat: userRecord.lat, lon: userRecord.lon, city: userRecord.city }
+      : undefined,
+    edgeGeo,
+  };
+
   // Fan out: every widget's data fetch in parallel.
   const renderedSections = await Promise.all(
     config.sections.map(async (section) => ({
       section,
-      widgets: await Promise.all(section.widgets.map((w) => renderWidget(w))),
+      widgets: await Promise.all(section.widgets.map((w) => renderWidget(w, renderCtx))),
     })),
   );
 
@@ -94,7 +108,13 @@ export default async function DashboardPage({ params }: Props) {
   let sunsetTime: string | null = null;
   const firstWeather = config.sections.flatMap((s) => s.widgets).find((w) => w.type === 'weather');
   if (firstWeather && firstWeather.type === 'weather') {
-    const r = await fetchWeather(firstWeather.lat, firstWeather.lon);
+    // Resolve via the same layered logic the widget itself uses (#105).
+    const loc = resolveLocation({
+      widget: { lat: firstWeather.lat, lon: firstWeather.lon, city: firstWeather.city },
+      user: renderCtx.userLocation,
+      edge: renderCtx.edgeGeo,
+    });
+    const r = await fetchWeather(loc.lat, loc.lon);
     if (r.ok) {
       sunriseTime = extractHhmm(r.data.today.sunrise);
       sunsetTime = extractHhmm(r.data.today.sunset);

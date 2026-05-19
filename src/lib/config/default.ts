@@ -126,8 +126,10 @@ export const DEFAULT_CONFIG: DashboardConfig = {
           color: 'blue',
           icon: '◈',
           span: 1,
-          lat: 40.71,
-          lon: -74.01,
+          // lat/lon intentionally omitted (#105) — resolved at render time
+          // via user.lat/lon → Vercel edge geo → hardcoded fallback. Set
+          // explicitly only if you want a per-widget location override
+          // (e.g. multiple weather widgets at different cities).
         },
         {
           type: 'headlines',

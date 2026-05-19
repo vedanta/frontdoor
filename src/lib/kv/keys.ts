@@ -23,6 +23,17 @@ export type UserRecord = {
    * refresh, etc.); not yet consumed by any data fetcher.
    */
   timezone?: string;
+  /**
+   * Optional location (#105 — layered location resolution). Populated when
+   * the user runs `<UseMyLocation/>` (browser geolocation grant) or PUTs
+   * via `/api/user`. Consumed by the weather widget render path; takes
+   * priority over Vercel edge geo headers and the hardcoded NYC fallback.
+   * Per-widget config can still override (rare multi-location case).
+   */
+  lat?: number;
+  lon?: number;
+  /** Pretty location label, e.g. `'Boulder, CO'`. Optional companion to lat/lon. */
+  city?: string;
   /** ISO 8601 UTC timestamp. */
   createdAt: string;
 };

@@ -172,17 +172,33 @@ describe('DashboardConfigSchema', () => {
     }
   });
 
-  it('weather widget requires lat/lon (no auto-geolocation in MVP)', () => {
+  it('weather widget lat/lon are now optional (#105 — layered location)', () => {
+    // Pre-#105 this was rejected; now valid because lat/lon fall through
+    // to UserRecord → Vercel edge geo → fallback. Per-widget lat/lon stays
+    // available as an override for the rare multi-location case.
     const c = valid();
-    c.sections[1].widgets.push(
-      bad<Widget>({
-        type: 'weather',
-        title: 'Weather',
-        color: 'blue',
-        icon: '◈',
-        span: 1,
-      }),
-    );
-    expect(DashboardConfigSchema.safeParse(c).success).toBe(false);
+    c.sections[1].widgets.push({
+      type: 'weather',
+      title: 'Weather',
+      color: 'blue',
+      icon: '◈',
+      span: 1,
+    } as Widget);
+    expect(DashboardConfigSchema.safeParse(c).success).toBe(true);
+  });
+
+  it('weather widget still accepts explicit lat/lon + city (per-widget override)', () => {
+    const c = valid();
+    c.sections[1].widgets.push({
+      type: 'weather',
+      title: 'Weather (Tokyo)',
+      color: 'blue',
+      icon: '◈',
+      span: 1,
+      lat: 35.68,
+      lon: 139.69,
+      city: 'Tokyo',
+    } as Widget);
+    expect(DashboardConfigSchema.safeParse(c).success).toBe(true);
   });
 });
