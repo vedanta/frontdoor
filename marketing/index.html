@@ -6,7 +6,7 @@
     <title>frontdoor — a browser start page that respects your attention</title>
     <meta
       name="description"
-      content="frontdoor is a dense, calm browser start page. Widgets arranged by the psychology of how you consume information at the start of a session, not by widget type."
+      content="A dense, calm browser start page. One screen. No notifications screaming at you. Read it once at the start of the day; the page is the page."
     />
 
     <!-- favicon -->
@@ -40,16 +40,30 @@
     <div class="grid-dots" aria-hidden="true"></div>
 
     <main class="shell">
+      <!-- ─── HERO + primary signup ─── -->
       <header class="hero">
         <div class="logo">frontdoor<span class="logo-dot" aria-hidden="true"></span></div>
         <h1>A browser start page that respects your attention.</h1>
         <p class="tagline">Dense. Calm. One screen. No dopamine loops.</p>
-        <p class="status">
-          <span class="status-dot" aria-hidden="true"></span>
-          status: in development · launching soon
+
+        <form class="signup-form" data-signup>
+          <label for="email-hero" class="sr-only">Email address</label>
+          <input
+            id="email-hero"
+            type="email"
+            name="email"
+            placeholder="you@example.com"
+            autocomplete="email"
+            required
+          />
+          <button type="submit">Send me a key →</button>
+        </form>
+        <p class="signup-note" data-signup-msg>
+          A one-time link by email. No password to remember.
         </p>
       </header>
 
+      <!-- ─── WHY ─── -->
       <section class="why">
         <div class="section-divider">
           <span class="section-divider-title">Why</span>
@@ -70,6 +84,7 @@
         </p>
       </section>
 
+      <!-- ─── THE ARC ─── -->
       <section class="arc">
         <div class="section-divider">
           <span class="section-divider-title">The Arc</span>
@@ -114,6 +129,7 @@
         </ol>
       </section>
 
+      <!-- ─── ANTI-GOALS ─── -->
       <section class="values">
         <div class="section-divider">
           <span class="section-divider-title">Anti-goals</span>
@@ -124,99 +140,137 @@
           <li>
             <h3>No spinners</h3>
             <p>
-              Every external API is fetched server-side and cached daily. A page load is a cache
-              hit. No loading states on the hot path.
+              Every external source is fetched ahead of you and cached daily. The page opens to a
+              cache hit. There are no loading states on the path you actually walk.
             </p>
           </li>
           <li>
             <h3>No motion</h3>
             <p>
-              The only animation is the clock ticking. No carousels, no autoplay, no notification
-              badges, no red.
+              The only thing that moves is the clock ticking. No carousels, no autoplay, no
+              notification badges, no red. Calm by construction.
             </p>
           </li>
           <li>
             <h3>No feed</h3>
             <p>
-              There is nothing to scroll. The page is the page. You read it once at the start of the
-              day, not refresh it compulsively.
+              There is nothing to scroll forever. The page is the page. Read it once at the start of
+              the day — not refreshed compulsively, not chased through an algorithm.
             </p>
           </li>
         </ul>
       </section>
 
+      <!-- ─── SEE IT — static screenshot, not iframe ─── -->
       <section class="see">
         <div class="section-divider">
           <span class="section-divider-title">See it</span>
           <span class="section-divider-line" aria-hidden="true"></span>
-          <span class="section-divider-sub">the visual fidelity reference</span>
+          <span class="section-divider-sub">what opens when you press Cmd-T</span>
         </div>
         <p class="see-lede">
-          A finished page, rendered from the original build. Click into the iframe to interact, or
-          open it full-screen:
+          One real dashboard — no mockup, no marketing render. The clock you see is the time the
+          page was captured. The weather is the weather there was. The headlines are the headlines
+          there were.
         </p>
-        <div class="preview">
-          <iframe
-            src="https://raw.githack.com/vedanta/frontdoor/main/design/index.html"
-            title="frontdoor — visual reference"
+        <figure class="screenshot">
+          <img
+            src="./screenshot.png"
+            alt="A frontdoor dashboard. Top section shows the clock, a Stoic passage, a daily quote, an on-this-day entry, and a vocabulary word. Below it sits the launcher with morning news links, weather showing 39° overcast, top headlines, and a tech &amp; AI feed."
+            width="2880"
+            height="1800"
             loading="lazy"
-            referrerpolicy="no-referrer"
-          ></iframe>
-        </div>
-        <p class="see-link">
-          <a
-            href="https://raw.githack.com/vedanta/frontdoor/main/design/index.html"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            open in a new tab →
-          </a>
-        </p>
+          />
+        </figure>
       </section>
 
+      <!-- ─── SECOND CTA — for users who scrolled past hero ─── -->
       <section class="try">
         <div class="section-divider">
-          <span class="section-divider-title">Try it</span>
+          <span class="section-divider-title">Get yours</span>
           <span class="section-divider-line" aria-hidden="true"></span>
+          <span class="section-divider-sub">a quiet start to the day</span>
         </div>
-        <p>Sign up by emailing yourself a key (live once the app deploys):</p>
-        <pre class="code"><code>curl -X POST https://frontdoor.app/api/keys \
-  -H 'content-type: application/json' \
-  -d '{"email":"you@example.com"}'</code></pre>
-        <p class="try-note">
-          You'll receive a one-time link. Click it — your browser opens to your start page, signed
-          in via an <code>httpOnly</code> cookie. No accounts to manage, no passwords, no recovery
-          flow.
+        <p class="try-lede">
+          One email, one click, one start page. You'll receive a one-time link — click it, and your
+          browser opens to your own dashboard, already signed in.
+        </p>
+        <form class="signup-form" data-signup>
+          <label for="email-bottom" class="sr-only">Email address</label>
+          <input
+            id="email-bottom"
+            type="email"
+            name="email"
+            placeholder="you@example.com"
+            autocomplete="email"
+            required
+          />
+          <button type="submit">Send me a key →</button>
+        </form>
+        <p class="signup-note" data-signup-msg>
+          No password. No account to manage. Your session is a secure cookie scoped to the page.
         </p>
       </section>
 
+      <!-- ─── FOOTER — minimal, no external links ─── -->
       <footer class="footer">
         <div class="section-divider">
           <span class="section-divider-line" aria-hidden="true"></span>
         </div>
-        <div class="footer-links">
-          <a href="https://github.com/vedanta/frontdoor" target="_blank" rel="noopener noreferrer">
-            github
-          </a>
-          <span class="sep" aria-hidden="true">·</span>
-          <a
-            href="https://github.com/vedanta/frontdoor/tree/main/design"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            design spec
-          </a>
-          <span class="sep" aria-hidden="true">·</span>
-          <a
-            href="https://github.com/vedanta/frontdoor/blob/main/docs/architecture.md"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            architecture
-          </a>
-        </div>
         <p class="footer-note">a browser start page that respects your attention.</p>
       </footer>
     </main>
+
+    <script>
+      /* Signup form handler — vanilla, no framework.
+         Wires every <form data-signup> on the page to POST to /api/keys
+         (relative URL, resolves same-origin on frontdoor.barooah.io) and
+         updates its sibling <p data-signup-msg> with the result. */
+      (function () {
+        var forms = document.querySelectorAll('form[data-signup]');
+        Array.prototype.forEach.call(forms, function (form) {
+          var msg = form.parentNode.querySelector('[data-signup-msg]');
+          var btn = form.querySelector('button[type="submit"]');
+          var input = form.querySelector('input[name="email"]');
+
+          form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            var email = (input.value || '').trim();
+            if (!email) return;
+
+            btn.disabled = true;
+            var originalText = btn.textContent;
+            btn.textContent = 'Sending…';
+            msg.textContent = '';
+            msg.className = 'signup-note';
+
+            try {
+              var res = await fetch('/api/keys', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ email: email }),
+              });
+              var body = await res.json().catch(function () {
+                return {};
+              });
+              if (res.ok) {
+                msg.textContent = '✓ Check your inbox for a one-time link.';
+                msg.className = 'signup-note signup-note--ok';
+                form.reset();
+              } else {
+                msg.textContent = body.error || 'Something went wrong — please try again.';
+                msg.className = 'signup-note signup-note--err';
+              }
+            } catch (err) {
+              msg.textContent = 'Network error — please try again.';
+              msg.className = 'signup-note signup-note--err';
+            } finally {
+              btn.disabled = false;
+              btn.textContent = originalText;
+            }
+          });
+        });
+      })();
+    </script>
   </body>
 </html>
