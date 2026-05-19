@@ -16,7 +16,10 @@
  * checked-in PNG is the source of truth. Re-run this script whenever the
  * dashboard's visual identity changes meaningfully.
  */
-import { chromium } from 'playwright';
+// We pull `chromium` from `@playwright/test` rather than `playwright` — the
+// project only declares `@playwright/test`, and re-exports the same browser
+// types. Avoids an extra dependency.
+import { chromium } from '@playwright/test';
 
 const SEED_KEY = 'fd_deadbeefdeadbeefdeadbeefdeadbeef';
 const URL = `http://localhost:3000/?key=${SEED_KEY}`;
