@@ -49,6 +49,11 @@ const PutBody = z
   .object({
     name: z.string().min(1).max(80).optional(),
     timezone: z.string().min(1).max(64).optional(),
+    // #105 — layered location resolution. Saved via `<UseMyLocation/>` (the
+    // browser-geolocation precision upgrade) or set explicitly by the user.
+    lat: z.number().min(-90).max(90).optional(),
+    lon: z.number().min(-180).max(180).optional(),
+    city: z.string().min(1).max(80).optional(),
   })
   .strict();
 

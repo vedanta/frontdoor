@@ -77,10 +77,20 @@ export const HeadlinesWidgetSchema = z.object({
 export const WeatherWidgetSchema = z.object({
   type: z.literal('weather'),
   ...widgetCommon,
-  // MVP decision: lat/lon required in config (no auto-geolocation — see post-mvp.md A2).
-  // Default config seeds NYC fallback coords.
-  lat: z.number(),
-  lon: z.number(),
+  /**
+   * Per-widget location override (#105). Optional now (was required pre-#105).
+   * When unset, falls through to layered resolution:
+   *   user.lat/lon (saved via /api/user PUT or `<UseMyLocation/>`)
+   *   → Vercel edge geo headers (x-vercel-ip-latitude/longitude)
+   *   → hardcoded fallback (NYC)
+   * Useful only for the rare case of multiple weather widgets at different
+   * locations; the typical user leaves these absent and uses their own
+   * UserRecord location.
+   */
+  lat: z.number().optional(),
+  lon: z.number().optional(),
+  /** Optional pretty label, e.g. `'Boulder, CO'`. Layered resolution may fill. */
+  city: z.string().optional(),
 });
 
 export const IMAGE_SOURCES = ['nasa-apod', 'bing-daily', 'wikimedia-potd', 'static'] as const;

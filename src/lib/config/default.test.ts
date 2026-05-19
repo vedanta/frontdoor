@@ -23,14 +23,16 @@ describe('DEFAULT_CONFIG (migration output)', () => {
     expect(DEFAULT_CONFIG.sections.map((s) => s.id)).toEqual([...SECTION_IDS]);
   });
 
-  it('weather widget has NYC fallback coords seeded', () => {
+  it('weather widget omits lat/lon (#105 — resolved at render time)', () => {
     const weather = DEFAULT_CONFIG.sections
       .flatMap((s) => s.widgets)
       .find((w) => w.type === 'weather');
     expect(weather).toBeDefined();
     if (weather && weather.type === 'weather') {
-      expect(weather.lat).toBeCloseTo(40.71, 2);
-      expect(weather.lon).toBeCloseTo(-74.01, 2);
+      // Pre-#105 these were seeded to NYC. Now they intentionally fall
+      // through to UserRecord → Vercel edge geo → hardcoded fallback.
+      expect(weather.lat).toBeUndefined();
+      expect(weather.lon).toBeUndefined();
     }
   });
 

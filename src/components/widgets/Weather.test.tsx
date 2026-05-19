@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { WeatherWidget } from './Weather';
 import type { WeatherWidget as WeatherConfig } from '@/lib/config';
+import type { ResolvedLocation } from '@/lib/location';
+
+// UseMyLocation is a 'use client' that needs next/navigation's useRouter.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }),
+}));
 
 const widget: WeatherConfig = {
   type: 'weather',
@@ -64,5 +70,60 @@ describe('WeatherWidget', () => {
       <WeatherWidget widget={widget} data={data} fetchedAt={yesterday} />,
     );
     expect(container.querySelector('.stale-caption')?.textContent).toBe('─ yesterday');
+  });
+
+  // ── #105: layered location row + UseMyLocation upgrade conditional ────
+
+  const mkLocation = (
+    source: ResolvedLocation['source'],
+    city: string | null,
+  ): ResolvedLocation => ({
+    lat: 40.01,
+    lon: -105.27,
+    city,
+    source,
+  });
+
+  it('renders location label when location prop has a city (#105)', () => {
+    const { container } = render(
+      <WeatherWidget
+        widget={widget}
+        data={data}
+        location={mkLocation('user-saved', 'Boulder, CO')}
+      />,
+    );
+    expect(container.querySelector('.weather-location-label')?.textContent).toBe('Boulder, CO');
+  });
+
+  it('renders coords when location has no city', () => {
+    const { container } = render(
+      <WeatherWidget widget={widget} data={data} location={mkLocation('edge-geo', null)} />,
+    );
+    expect(container.querySelector('.weather-location-label')?.textContent).toBe(
+      '40.01°, -105.27°',
+    );
+  });
+
+  it('shows "use precise location" link when source is edge-geo or fallback', () => {
+    for (const source of ['edge-geo', 'fallback'] as const) {
+      const { container } = render(
+        <WeatherWidget widget={widget} data={data} location={mkLocation(source, 'Boulder')} />,
+      );
+      expect(container.querySelector('.loc-upgrade')).toBeInTheDocument();
+    }
+  });
+
+  it('hides "use precise location" link when source is user-saved or widget-override', () => {
+    for (const source of ['user-saved', 'widget-override'] as const) {
+      const { container } = render(
+        <WeatherWidget widget={widget} data={data} location={mkLocation(source, 'Boulder')} />,
+      );
+      expect(container.querySelector('.loc-upgrade')).not.toBeInTheDocument();
+    }
+  });
+
+  it('does NOT render the location row when no location prop passed', () => {
+    const { container } = render(<WeatherWidget widget={widget} data={data} />);
+    expect(container.querySelector('.weather-location')).not.toBeInTheDocument();
   });
 });

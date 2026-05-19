@@ -163,6 +163,50 @@
   gap: 10px;
 }
 
+/* ── Location row (#105) ── */
+/* Bottom strip in the weather widget showing where the data is from.
+   Conditional UseMyLocation upgrade link appears only when the resolution
+   came from edge-geo or fallback (i.e., user hasn't saved a precise location
+   yet). Once saved, this whole row stays but the upgrade link disappears. */
+.weather-location {
+  margin-top: 6px;
+  font-size: 9px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  opacity: 0.7;
+}
+.weather-location-label {
+  font-family: var(--font-plex-mono), monospace;
+  letter-spacing: 0.3px;
+}
+.loc-upgrade {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--accent-cyan, currentColor);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+.loc-upgrade:hover {
+  opacity: 1;
+}
+.loc-msg {
+  font-style: italic;
+  opacity: 0.6;
+}
+.loc-error,
+.loc-denied {
+  color: var(--text-dim);
+}
+
 /* ── Widget: text ── */
 .text-body {
   /* scales with A−/A+ (#51) — the daily-text body IS the reading content */
